@@ -97,7 +97,8 @@ def high_speed(args):
     else:
         mask = None
 
-    cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)

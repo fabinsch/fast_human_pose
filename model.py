@@ -7,6 +7,10 @@ import chainer.functions as F
 import chainer.links as L
 from chainer import initializers
 
+import logging
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
 major, _, _ = chainer.__version__.split(".")
 MAJOR = int(major)
 if MAJOR >= 5:
@@ -108,6 +112,13 @@ class PoseProposalNet(chainer.link.Chain):
         inW, inH = self.insize
         outW, outH = self.outsize
         self.gridsize = (int(inW / outW), int(inH / outH))
+        num_param = self.feature_layer.count_params()
+        num_param2 = self.lastconv.count_params()
+        logger.info('number of mobilnet parameters: {}'.format(num_param))
+        logger.info('number of last layer parameters: {}'.format(num_param2))
+        logger.info('number of total parameters: {}'.format(num_param+num_param2))
+
+
 
     def get_outsize(self):
         inp = np.zeros((2, 3, self.insize[1], self.insize[0]), dtype=np.float32)
@@ -149,16 +160,17 @@ class PoseProposalNet(chainer.link.Chain):
         # Set delta^i_k
         for (x, y, w, h), points, labeled in zip(bbox, keypoints, is_labeled):
             if dataset_type == 'mpii':
-                partsW, partsH = self.parts_scale * math.sqrt(w * w + h * h)
-                instanceW, instanceH = self.instance_scale * math.sqrt(w * w + h * h)
+                partsW, partsH = self.parts_scale * math.sqrt(w * w + h * h) # half head diagonal
+                instanceW, instanceH = self.instance_scale * math.sqrt(w * w + h * h) # double head diagonal
             elif dataset_type == 'coco':
                 partsW, partsH = self.parts_scale * math.sqrt(w * w + h * h)
                 instanceW, instanceH = w, h
             else:
                 raise ValueError("must be 'mpii' or 'coco' but actual {}".format(dataset_type))
+            # get center of head bounding box
             cy = y + h / 2
             cx = x + w / 2
-            points = [[cy, cx]] + list(points)
+            points = [[cy, cx]] + list(points) # add center of head to list of keypoints
             labeled = [True] + list(labeled)
             for k, (yx, l) in enumerate(zip(points, labeled)):
                 if not l:
@@ -166,11 +178,11 @@ class PoseProposalNet(chainer.link.Chain):
                 cy = yx[0] / gridH
                 cx = yx[1] / gridW
                 ix, iy = int(cx), int(cy)
-                sizeW = instanceW if k == 0 else partsW
-                sizeH = instanceH if k == 0 else partsH
-                if 0 <= iy < outH and 0 <= ix < outW:
-                    delta[k, iy, ix] = 1
-                    tx[k, iy, ix] = cx - ix
+                sizeW = instanceW if k == 0 else partsW # head
+                sizeH = instanceH if k == 0 else partsH # rest of keypoints
+                if 0 <= iy < outH and 0 <= ix < outW: # if in output grid
+                    delta[k, iy, ix] = 1 # I think get the responsible cell
+                    tx[k, iy, ix] = cx - ix # construct the bounding box around joints
                     ty[k, iy, ix] = cy - iy
                     tw[k, iy, ix] = sizeW / inW
                     th[k, iy, ix] = sizeH / inH

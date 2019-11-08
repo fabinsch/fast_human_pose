@@ -34,6 +34,8 @@ DATA_MODULE = None
 
 
 def get_feature(model, image):
+    global inference_time
+
     start = time.time()
     image = xp.asarray(image)
     processed_image = model.feature_layer.prepare(image)
@@ -53,7 +55,9 @@ def get_feature(model, image):
     w = np.squeeze(w, axis=0)
     h = np.squeeze(h, axis=0)
     e = np.squeeze(e, axis=0)
-    logger.info('inference time {:.5f}'.format(time.time() - start))
+
+    inference_time=time.time() - start
+    logger.info('inference time {:.5f}'.format(inference_time))
     return resp, conf, x, y, w, h, e
 
 
@@ -196,6 +200,9 @@ def create_model(args, config):
         width_multiplier=config.getfloat('model_param', 'width_multiplier'),
     )
 
+    logger.info('input size = {}'.format(model.insize))
+    logger.info('output size = {}'.format(model.outsize))
+
     result_dir = args.model
     chainer.serializers.load_npz(
         os.path.join(result_dir, 'bestmodel.npz'),
@@ -248,7 +255,9 @@ def predict(args):
 
     model = create_model(args, config)
 
+    # choose specific image
     idx = random.choice(range(len(test_set)))
+    idx = 50
     image = test_set.get_example(idx)['image']
     humans = estimate(
         model,
@@ -265,8 +274,8 @@ def predict(args):
         visbbox=config.getboolean('predict', 'visbbox')
     )
 
-    pil_image.save('result.png', 'PNG')
-
+    #pil_image.save('result.png', 'PNG')
+    pil_image.save('result_' + 'X'.join((str(_.insize[0]), str(_.insize[1]))) + '_idx_' + str(idx) + '_time_' + str(round(inference_time, 3)) + 's.png', 'PNG')
 
 def parse_arguments():
     parser = argparse.ArgumentParser()

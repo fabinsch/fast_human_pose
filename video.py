@@ -22,7 +22,8 @@ def video(args):
     config = load_config(args)
     model = create_model(args, config)
 
-    cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)
@@ -63,7 +64,8 @@ def video(args):
         msg += ' ' + config.get('model_param', 'model_name')
         cv2.putText(img_with_humans, 'FPS: % f' % (1.0 / (time.time() - fps_time)),
                     (10, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        img_with_humans = cv2.resize(img_with_humans, (3 * model.insize[0], 3 * model.insize[1]))
+        # img_with_humans = cv2.resize(img_with_humans, (3 * model.insize[0], 3 * model.insize[1]))
+        img_with_humans = cv2.resize(img_with_humans, (1* model.insize[0],1* model.insize[1]))
         cv2.imshow('Pose Proposal Network' + msg, img_with_humans)
         fps_time = time.time()
         # press Esc to exit

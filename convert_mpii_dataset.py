@@ -40,6 +40,7 @@ def main():
         train_flag = int(train_flag)
 
         head_rect = []
+        # check if head rectangle given, otherwise skip image for training
         if 'x1' in str(anno['annorect'].dtype):
             head_rect = zip(
                 [x1[0, 0] for x1 in anno['annorect']['x1'][0]],
@@ -47,6 +48,7 @@ def main():
                 [x2[0, 0] for x2 in anno['annorect']['x2'][0]],
                 [y2[0, 0] for y2 in anno['annorect']['y2'][0]])
 
+        # check if annotations are given
         if 'annopoints' in str(anno['annorect'].dtype):
             annopoints = anno['annorect']['annopoints'][0]
             head_x1s = anno['annorect']['x1'][0]
