@@ -6,6 +6,7 @@ import chainercv.transforms as transforms
 from chainercv.links.model.ssd.transforms import random_distort
 import PIL
 from PIL import ImageChops, ImageOps, ImageFilter, ImageEnhance
+from chainercv import utils
 
 
 def rotate_point(point_yx, angle, center_yx):
@@ -228,15 +229,15 @@ def random_flip(image, keypoints, bbox, is_labeled, is_visible, flip_indices):
 
     return image, keypoints, bbox, is_labeled, is_visible, param
 
-
-def scale_fit_short(image, keypoints, bbox, length):
-    _, H, W = image.shape
-    min_hw = min(H, W)
-    scale = length / min_hw
+# input image is resized so that shorter edge will be scaled to length
+def scale_fit_short(image, keypoints, bbox, length): # length = 1350
+    _, H, W = image.shape # get actual image shape
+    min_hw = min(H, W) # min_hw = 720
+    scale = length / min_hw # how much to scale image
     new_image = transforms.scale(image, size=length, fit_short=True)
     new_keypoints = [scale * k for k in keypoints]
     new_bbox = [scale * np.asarray(b) for b in bbox]
-    return new_image, new_keypoints, new_bbox
+    return new_image, new_keypoints, new_bbox # new shape of image (3, 1350, 2400)
 
 
 def intersection(bbox0, bbox1):
@@ -373,7 +374,7 @@ def random_sized_crop(image, keypoints, bbox):
 
     return image, keypoints, bbox, {random_sized_crop.__name__: param}
 
-
+# fit image to desired output size
 def resize(image, keypoints, bbox, size):
     _, H, W = image.shape
     new_h, new_w = size
@@ -425,3 +426,49 @@ def random_crop(image, keypoints, bbox, is_labeled, dataset_type):
         param.update(p)
 
     return image, keypoints, bbox, param
+
+
+def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1080)):
+    _, H, W = image.shape #(channels, height, width)
+
+    # either get a random scale out of many persons or the closest to one -> less rescaling
+    if closest:
+        scale = min(scale, key=lambda x: abs(x - 1))
+    else:
+        scale = random.choice(scale)
+    resizeW, resizeH = int(W/scale), int(H/scale)
+    image, keypoints, bbox = resize(image, keypoints, bbox, (resizeH, resizeW))
+
+    # insize = (1920, 1080) FORMAT (WIDTH, HEIGHT) #TODO compare both height and width
+    if resizeH < insize[1]:
+        image, keypoints, bbox = expand(img=image, keypoints=keypoints, bbox=bbox, insize=insize, fill=0, return_param=False) # TODO include rescaling keypoints and Bbox
+        # utils.write_image(np.swapaxes(image, 1, 2), '/home/fabian/Desktop/027622731.jpg')
+        utils.write_image(image, '/home/fabian/Desktop/027622731.jpg')
+    else:
+        print("crop")
+    return image, keypoints, bbox
+
+
+def expand(img, keypoints, bbox, insize, fill=0, return_param=False):
+    C, H, W = img.shape # (H 246, W 437)
+
+    out_W, out_H = insize #(1920, 1080)
+
+    y_offset = random.randint(0, out_H - H) # in height direction
+    x_offset = random.randint(0, out_W - W) # in width direction
+
+    out_img = np.empty((C, out_H, out_W), dtype=img.dtype)
+    out_img[:] = np.array(fill).reshape((-1, 1, 1))
+    out_img[:, y_offset:y_offset + H, x_offset:x_offset + W] = img
+
+    # points have (y, x) shape
+    keypoints = [[(point[0] + x_offset, point[1] + y_offset) for point in points] for points in keypoints]
+    bbox = [[box[0] + x_offset, box[1] + y_offset, box[2], box[3]] for box in bbox]
+
+    if return_param:
+        param = {'ratio': H/out_H , 'y_offset': y_offset, 'x_offset': x_offset}
+        return out_img, keypoints, bbox, param
+    else:
+        return out_img, keypoints, bbox
+
+

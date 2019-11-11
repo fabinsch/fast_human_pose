@@ -1,6 +1,7 @@
 import os
 import glob
 import itertools
+import cv2
 
 import shutil
 
@@ -44,3 +45,27 @@ def save_files(result_dir):
     for file in file_list:
         shutil.copy(file, os.path.join(result_src_dir, os.path.basename(file)))
     return result_src_dir
+
+
+def show_image1(path, scale=500, name='UNK'):
+    name = 'scale: ' + str(round(scale, 2))+' image: ' + name
+    cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+    cv2.moveWindow(name, 40, 30)
+    cv2.resizeWindow(name, (480, 270))
+    img = cv2.imread(path)
+    cv2.imshow(name, img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+
+def show_image2(image, name='UNK'):
+    name = "test"
+    cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+    cv2.moveWindow(name, 40, 30)
+    #cv2.resizeWindow(name, (480, 270))
+    #img = cv2.imread(path)
+    cv2.imshow(name, image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+

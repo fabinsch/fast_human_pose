@@ -4,17 +4,7 @@ import json
 import numpy as np
 import os
 import cv2
-
-
-def show_image(path, scale=500, name='UNK'):
-    name = 'scale: ' + str(round(scale, 2))+' image: ' + name
-    cv2.namedWindow(name, cv2.WINDOW_NORMAL)
-    cv2.moveWindow(name, 40, 30)
-    cv2.resizeWindow(name, (480, 270))
-    img = cv2.imread(path)
-    cv2.imshow(name, img)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+from utils import show_image1
 
 
 def main():

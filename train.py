@@ -133,7 +133,7 @@ def main():
     model = create_model(config, train_set)
 
     logger.info('> transform dataset')
-    train_set = TransformDataset(train_set, model.encode) # look at encode, contains parts_scale and instance_scale -> this line modifies the get_item of dataset
+    train_set = TransformDataset(train_set, model.encode) # look at encode in model.py -> modifies the get_item function of dataset
     test_set = TransformDataset(test_set, model.encode)
 
     logger.info('> create iterators')

@@ -6,8 +6,9 @@ import chainercv.transforms as transforms
 import numpy as np
 
 from augment import random_rotate, random_flip, random_crop
-from augment import scale_fit_short, resize
+from augment import scale_fit_short, resize, resize_to_scale
 from augment import augment_image
+from utils import show_image2
 
 
 class KeypointDataset2D(DatasetMixin):
@@ -22,6 +23,8 @@ class KeypointDataset2D(DatasetMixin):
                  bbox,
                  is_visible,
                  is_labeled,
+                 scale,
+                 position,
                  image_paths,
                  image_root='.',
                  use_cache=False,
@@ -36,6 +39,8 @@ class KeypointDataset2D(DatasetMixin):
         self.bbox = bbox  # [x,y,w,h]
         self.is_visible = is_visible
         self.is_labeled = is_labeled
+        self.scale = scale
+        self.position = position
         self.image_paths = image_paths
         self.image_root = image_root
         self.do_augmentation = do_augmentation
@@ -64,6 +69,9 @@ class KeypointDataset2D(DatasetMixin):
         image, keypoints, bbox, param = random_crop(image, keypoints, bbox, is_labeled, dataset_type)
         transform_param['random_crop'] = param
 
+        # scale to approx 200 px
+
+
         return image, keypoints, bbox, is_labeled, is_visible, transform_param
 
     def get_example(self, i):
@@ -78,6 +86,8 @@ class KeypointDataset2D(DatasetMixin):
             bbox = self.bbox[i]
             is_labeled = self.is_labeled[i]
             is_visible = self.is_visible[i]
+            scale = self.scale[i]
+            position = self.position[i]
 
             if self.use_cache:
                 image, keypoints, bbox = resize(image, keypoints, bbox, (h, w))
@@ -88,11 +98,14 @@ class KeypointDataset2D(DatasetMixin):
         bbox = bbox.copy()
         is_labeled = is_labeled.copy()
         is_visible = is_visible.copy()
+        scale = scale.copy()
+        position = position.copy()
 
         transform_param = {}
         try:
             if self.do_augmentation:
-                image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
+                #image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
+                image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
                 image, keypoints, bbox, is_labeled, is_visible, transform_param = self.transform(
                     image, keypoints, bbox, is_labeled, is_visible, self.dataset_type)
             transform_param['do_augmentation'] = self.do_augmentation

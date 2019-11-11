@@ -108,7 +108,7 @@ def get_mpii_dataset(insize, image_root, annotations,
     images = {}
 
     for filename in np.unique([anno['filename'] for anno in annotations]):
-        images[filename] = [], [], [], []
+        images[filename] = [], [], [], [], [], [] # include scale and position
 
     for anno in annotations:
         is_visible = [anno['is_visible'][k] for k in KEYPOINT_NAMES[1:]]
@@ -124,6 +124,8 @@ def get_mpii_dataset(insize, image_root, annotations,
         entry[2].append(np.array(is_visible, dtype=np.bool))
         is_labeled = np.ones(len(is_visible), dtype=np.bool)
         entry[3].append(is_labeled)
+        entry[4].append(np.array(anno['scale']))
+        entry[5].append(np.array(anno['position']))
 
     # split dataset
     train_images, test_images = split_dataset_random(
@@ -139,6 +141,8 @@ def get_mpii_dataset(insize, image_root, annotations,
         bbox=[images[i][1] for i in train_images],
         is_visible=[images[i][2] for i in train_images],
         is_labeled=[images[i][3] for i in train_images],
+        scale=[images[i][4] for i in train_images],
+        position=[images[i][5] for i in train_images],
         image_paths=train_images,
         image_root=image_root,
         use_cache=use_cache,
@@ -155,6 +159,8 @@ def get_mpii_dataset(insize, image_root, annotations,
         bbox=[images[i][1] for i in test_images],
         is_visible=[images[i][2] for i in test_images],
         is_labeled=[images[i][3] for i in test_images],
+        scale=[images[i][4] for i in test_images],
+        position=[images[i][5] for i in test_images],
         image_paths=test_images,
         image_root=image_root,
         use_cache=use_cache,
