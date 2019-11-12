@@ -17,13 +17,15 @@ from predict import COLOR_MAP
 from predict import estimate, draw_humans, create_model, load_config
 from utils import parse_size
 
-
+# /home/fabian/Documents/human-pose/work/trained/1920x1080_3x3_not_rescaled
+# /home/fabian/Documents/human-pose/result/mobilenetv2_224x224_1.0_mpii
+# /home/fabian/Documents/human-pose/result/resnet18_224x224_mpii
 def video(args):
     config = load_config(args)
     model = create_model(args, config)
 
-    # cap = cv2.VideoCapture(0)
-    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
+    cap = cv2.VideoCapture(0)
+    # cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)

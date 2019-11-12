@@ -16,7 +16,7 @@ from PIL import Image
 from predict import get_feature, get_humans_by_feature, draw_humans, create_model, load_config
 from utils import parse_size
 
-QUEUE_SIZE = 5
+QUEUE_SIZE = 50
 
 """
 Bonus script
@@ -42,6 +42,7 @@ class Capture(threading.Thread):
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 image = cv2.resize(image, self.insize)
                 self.queue.put(image, timeout=1)
+                print("read queue: ", self.queue.qsize())
             except queue.Full:
                 pass
 
@@ -71,6 +72,7 @@ class Predictor(threading.Thread):
                         chainer.using_config('use_ideep', 'auto'):
                     feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
                 self.queue.put((image, feature_map), timeout=1)
+                print("pred queue: ", self.queue.qsize())
             except queue.Full:
                 pass
             except queue.Empty:
@@ -97,8 +99,8 @@ def high_speed(args):
     else:
         mask = None
 
-    # cap = cv2.VideoCapture(0)
-    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
+    cap = cv2.VideoCapture(0) # get input from usb camera
+    # cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)

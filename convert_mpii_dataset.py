@@ -12,6 +12,10 @@ def main():
     count = 0
     img_count = {}
 
+    # counter for scale smaller than 1
+    count2 = 0
+    img_count2 = {}
+
     parser = argparse.ArgumentParser()
     parser.add_argument('matfile')
     parser.add_argument('output')
@@ -112,9 +116,14 @@ def main():
                     # get the scale
 
                     if scale < 1.3 and scale > 0.8:
-                        #show_image(path=path, scale=scale, name=img_fn)
+                        # show_image(path=path, scale=scale, name=img_fn)
                         count += 1
                         img_count[img_fn] = '1'
+
+                    if scale < 1.0:
+
+                        count2 += 1
+                        img_count2[img_fn] = '1'
 
                     if len(joint_pos) == 16:
                         data = {
@@ -128,9 +137,11 @@ def main():
                         }
 
                         annotations.append(data)
-    json.dump(annotations, open(args.output, 'w'))
+    #json.dump(annotations, open(args.output, 'w'))
     print('human instances with scale between 0.8 and 1.3: ', count)
     print('that makes {} images'.format(len(img_count)))
+    print('human instances with scale smaller than 1.0: ', count2)
+    print('that makes {} images'.format(len(img_count2)))
 
 
 if __name__ == '__main__':

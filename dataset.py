@@ -8,7 +8,7 @@ import numpy as np
 from augment import random_rotate, random_flip, random_crop
 from augment import scale_fit_short, resize, resize_to_scale
 from augment import augment_image
-from utils import show_image2
+from utils import show_image1
 
 
 class KeypointDataset2D(DatasetMixin):
@@ -106,8 +106,12 @@ class KeypointDataset2D(DatasetMixin):
             if self.do_augmentation:
                 #image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
                 image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
+                # utils.write_image(image, os.path.join('/home/fabian/Desktop/test/', self.image_paths[i]))
+
+                # bad because random crop in destroys scaling to normalized , include normalization in transform call ?
                 image, keypoints, bbox, is_labeled, is_visible, transform_param = self.transform(
                     image, keypoints, bbox, is_labeled, is_visible, self.dataset_type)
+                utils.write_image(image, os.path.join('/home/fabian/Desktop/test2/', self.image_paths[i]))
             transform_param['do_augmentation'] = self.do_augmentation
             image, keypoints, bbox = resize(image, keypoints, bbox, (h, w))
         except Exception as e:

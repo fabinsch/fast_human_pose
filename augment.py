@@ -374,6 +374,7 @@ def random_sized_crop(image, keypoints, bbox):
 
     return image, keypoints, bbox, {random_sized_crop.__name__: param}
 
+
 # fit image to desired output size
 def resize(image, keypoints, bbox, size):
     _, H, W = image.shape
@@ -443,7 +444,8 @@ def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1
     if resizeH < insize[1]:
         image, keypoints, bbox = expand(img=image, keypoints=keypoints, bbox=bbox, insize=insize, fill=0, return_param=False) # TODO include rescaling keypoints and Bbox
         # utils.write_image(np.swapaxes(image, 1, 2), '/home/fabian/Desktop/027622731.jpg')
-        utils.write_image(image, '/home/fabian/Desktop/027622731.jpg')
+        # utils.write_image(image, '/home/fabian/Desktop/027622731.jpg')
+        #print("done")
     else:
         print("crop")
     return image, keypoints, bbox
@@ -459,10 +461,10 @@ def expand(img, keypoints, bbox, insize, fill=0, return_param=False):
 
     out_img = np.empty((C, out_H, out_W), dtype=img.dtype)
     out_img[:] = np.array(fill).reshape((-1, 1, 1))
-    out_img[:, y_offset:y_offset + H, x_offset:x_offset + W] = img
+    out_img[:, y_offset:y_offset + H, x_offset:x_offset + W] = img # (3, 1080, 1920)
 
     # points have (y, x) shape
-    keypoints = [[(point[0] + x_offset, point[1] + y_offset) for point in points] for points in keypoints]
+    keypoints = [[(point[0] + y_offset, point[1] + x_offset) for point in points] for points in keypoints]
     bbox = [[box[0] + x_offset, box[1] + y_offset, box[2], box[3]] for box in bbox]
 
     if return_param:
