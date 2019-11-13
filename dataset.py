@@ -50,12 +50,13 @@ class KeypointDataset2D(DatasetMixin):
     def __len__(self):
         return len(self.image_paths)
 
-    def transform(self, image, keypoints, bbox, is_labeled, is_visible, dataset_type):
+    def transform(self, image, keypoints, bbox, is_labeled, is_visible, dataset_type, scale):
         transform_param = {}
 
         # Color augmentation
-        image, param = augment_image(image, dataset_type)
-        transform_param['augment_image'] = param
+        # image, param = augment_image(image, dataset_type)
+        # transform_param['augment_image'] = param
+        transform_param['augment_image'] = "0"
 
         # Random rotate
         image, keypoints, bbox, param = random_rotate(image, keypoints, bbox)
@@ -66,12 +67,12 @@ class KeypointDataset2D(DatasetMixin):
         transform_param['random_flip'] = param
 
         # Random crop
-        image, keypoints, bbox, param = random_crop(image, keypoints, bbox, is_labeled, dataset_type)
-        transform_param['random_crop'] = param
+        # image, keypoints, bbox, param = random_crop(image, keypoints, bbox, is_labeled, dataset_type)
+        # transform_param['random_crop'] = param
+        transform_param['random_crop'] = "0"
 
         # scale to approx 200 px
-
-
+        # image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
         return image, keypoints, bbox, is_labeled, is_visible, transform_param
 
     def get_example(self, i):
@@ -99,20 +100,22 @@ class KeypointDataset2D(DatasetMixin):
         is_labeled = is_labeled.copy()
         is_visible = is_visible.copy()
         scale = scale.copy()
-        position = position.copy()
+        # position = position.copy()
 
         transform_param = {}
         try:
             if self.do_augmentation:
-                #image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
+                # image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
                 image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
                 # utils.write_image(image, os.path.join('/home/fabian/Desktop/test/', self.image_paths[i]))
 
-                # bad because random crop in destroys scaling to normalized , include normalization in transform call ?
+                # adapted transforms, random crop destroys scaling to normalized
                 image, keypoints, bbox, is_labeled, is_visible, transform_param = self.transform(
-                    image, keypoints, bbox, is_labeled, is_visible, self.dataset_type)
-                utils.write_image(image, os.path.join('/home/fabian/Desktop/test2/', self.image_paths[i]))
+                    image, keypoints, bbox, is_labeled, is_visible, self.dataset_type, scale)
+                # utils.write_image(image, os.path.join('/home/fabian/Desktop/test4/', self.image_paths[i]))
             transform_param['do_augmentation'] = self.do_augmentation
+
+            # resizing not required at this point any more - done inside resize_to_scale function
             image, keypoints, bbox = resize(image, keypoints, bbox, (h, w))
         except Exception as e:
             raise Exception("something wrong...transform_param = {}".format(transform_param))
