@@ -229,6 +229,7 @@ def random_flip(image, keypoints, bbox, is_labeled, is_visible, flip_indices):
 
     return image, keypoints, bbox, is_labeled, is_visible, param
 
+
 # input image is resized so that shorter edge will be scaled to length
 def scale_fit_short(image, keypoints, bbox, length): # length = 1350
     _, H, W = image.shape # get actual image shape
@@ -433,10 +434,17 @@ def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1
     _, H, W = image.shape #(channels, height, width)
 
     # either get a random scale out of many persons or the closest to one -> less rescaling
-    if closest:
-        scale = min(scale, key=lambda x: abs(x - 1))
+    # TODO get this right!!!!
+    if scale:
+        if closest:
+            scale = min(scale, key=lambda x: abs(x - 1))
+        else:
+            scale = random.choice(scale)
     else:
-        scale = random.choice(scale)
+        resizeW, resizeH = insize
+        image, keypoints, bbox = resize(image, keypoints, bbox, (resizeH, resizeW))
+        return image, keypoints, bbox
+
     resizeW, resizeH = int(W/scale), int(H/scale)
     image, keypoints, bbox = resize(image, keypoints, bbox, (resizeH, resizeW))
 
@@ -447,7 +455,9 @@ def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1
         # utils.write_image(image, '/home/fabian/Desktop/027622731.jpg')
         #print("done")
     else:
-        print("crop")
+        # print("crop")
+        resizeW, resizeH = insize
+        image, keypoints, bbox = resize(image, keypoints, bbox, (resizeH, resizeW))
     return image, keypoints, bbox
 
 
