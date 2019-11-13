@@ -434,7 +434,6 @@ def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1
     _, H, W = image.shape #(channels, height, width)
 
     # either get a random scale out of many persons or the closest to one -> less rescaling
-    # TODO get this right!!!!
     if scale:
         if closest:
             scale = min(scale, key=lambda x: abs(x - 1))
@@ -453,7 +452,7 @@ def resize_to_scale(image, keypoints, bbox, scale, closest=True, insize=(1920, 1
         image, keypoints, bbox = expand(img=image, keypoints=keypoints, bbox=bbox, insize=insize, fill=0, return_param=False) # TODO include rescaling keypoints and Bbox
         # utils.write_image(np.swapaxes(image, 1, 2), '/home/fabian/Desktop/027622731.jpg')
         # utils.write_image(image, '/home/fabian/Desktop/027622731.jpg')
-        #print("done")
+        # print("done")
     else:
         # print("crop")
         resizeW, resizeH = insize

@@ -6,6 +6,7 @@ from chainer import reporter
 import chainer.functions as F
 import chainer.links as L
 from chainer import initializers
+import cupy
 
 import logging
 logger = logging.getLogger(__name__)
@@ -230,6 +231,7 @@ class PoseProposalNet(chainer.link.Chain):
         h = F.cast(x, self.dtype)
         h = self.feature_layer(h)
         h = self.feature_layer.last_activation(self.lastconv(h))
+        # print(cupy.get_default_memory_pool().used_bytes())
         return h
 
     @static_graph
@@ -258,7 +260,7 @@ class PoseProposalNet(chainer.link.Chain):
         K = len(self.keypoint_names)
         B, _, _, _ = image.shape
         outW, outH = self.outsize
-
+        # print(image.nbytes)
         feature_map = self.forward(image)
         resp = feature_map[:, 0 * K:1 * K, :, :]
         conf = feature_map[:, 1 * K:2 * K, :, :]

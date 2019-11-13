@@ -74,7 +74,7 @@ def main():
 
     chainer.global_config.autotune = True
     # chainer.cuda.set_max_workspace_size(11388608)
-    chainer.cuda.set_max_workspace_size(512 * 1024 * 1024) #536,870,912 bytes alomost 4GB, default is 0.064GB
+    # chainer.cuda.set_max_workspace_size(512 * 1024 * 1024) #536,870,912 bytes alomost 4GB, default is 0.064GB
     chainer.config.cudnn_fast_batch_normalization = True
 
     # create result dir and copy file
@@ -133,7 +133,7 @@ def main():
     model = create_model(config, train_set)
 
     logger.info('> transform dataset')
-    train_set = TransformDataset(train_set, model.encode) # look at encode in model.py -> modifies the get_item function of dataset
+    train_set = TransformDataset(train_set, model.encode) # look at encode in model.py -> modifies the get_item function of dataset, here is where errors defined
     test_set = TransformDataset(test_set, model.encode)
 
     logger.info('> create iterators')
@@ -160,6 +160,8 @@ def main():
                                )
 
     logger.info('> setup extensions')
+    # Trainer extension to change an optimizer attribute linearly
+    # -> maybe not the best idea, rather choose LR and do plateau adaption
     trainer.extend(
         extensions.LinearShift('lr',
                                value_range=(config.getfloat('training_param', 'learning_rate'), 0),
@@ -186,6 +188,7 @@ def main():
     ]))
     trainer.extend(extensions.ProgressBar())
 
+    # take snapshots of the trainer
     trainer.extend(extensions.snapshot(filename='best_snapshot'),
                    trigger=training.triggers.MinValueTrigger('validation/main/loss'))
     trainer.extend(extensions.snapshot_object(model, filename='bestmodel.npz'),

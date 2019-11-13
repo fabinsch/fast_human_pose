@@ -104,9 +104,15 @@ class KeypointDataset2D(DatasetMixin):
 
         transform_param = {}
         try:
+            # put it here for testing with provided MPII dataset - otherwise scale of persons is
+            # to different and can't detect limbs with grid 3x3 -> huge error for limbs
+            # usually should not be necessary when testing with proper video dataset
+            image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
+
             if self.do_augmentation:
                 # image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
-                image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
+                # TODO activate this line here and uncomment above resize_to_scale
+                # image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
                 # utils.write_image(image, os.path.join('/home/fabian/Desktop/test/', self.image_paths[i]))
 
                 # adapted transforms, random crop destroys scaling to normalized
