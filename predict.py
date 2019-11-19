@@ -203,7 +203,11 @@ def create_model(args, config):
     logger.info('input size = {}'.format(model.insize))
     logger.info('output size = {}'.format(model.outsize))
 
-    result_dir = args.model
+    try:
+        result_dir = args.model
+    except:
+        result_dir = args
+
     chainer.serializers.load_npz(
         os.path.join(result_dir, 'bestmodel.npz'),
         model
