@@ -15,8 +15,9 @@ from PIL import Image
 
 from predict import get_feature, get_humans_by_feature, draw_humans, create_model
 from utils import parse_size
+from multiprocessing import Process, Event, Queue, set_start_method
 
-QUEUE_SIZE = 50
+QUEUE_SIZE = 0
 
 """
 Bonus script
@@ -25,13 +26,12 @@ this script will be helpful for realtime inference
 """
 
 
-class Capture(threading.Thread):
+class Capture(Process):
 
-    def __init__(self, cap, insize):
+    def __init__(self, cap):
         super(Capture, self).__init__()
         self.cap = cap
-        # self.insize = insize
-        self.stop_event = threading.Event()
+        self.stop_event = Event()
         self.queue1 = queue.Queue(QUEUE_SIZE)
         self.queue2 = queue.Queue(QUEUE_SIZE)
         self.name = 'Capture'
@@ -45,33 +45,39 @@ class Capture(threading.Thread):
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
                 # move resizing to predictor
                 # image = cv2.resize(image, self.insize)
-                self.queue1.put((image, self.count), timeout=1)
-                self.queue2.put((image, self.count), timeout=1)
-                # print("read queue: ", self.queue.qsize())
+                self.queue1.put((image, self.count), timeout=100)
+                self.queue2.put((image, self.count), timeout=100)
+                #print("read queue: ", self.queue1.qsize())
             except queue.Full:
+                pass
+            except cv2.error:
+                print("cv2 error")
                 pass
 
     def get(self, i):
         if i == 1:
-            return self.queue1.get(timeout=1)
+            return self.queue1.get(timeout=100)
         else:
-            return self.queue2.get(timeout=1)
+            return self.queue2.get(timeout=100)
 
     def stop(self):
         logger.info('{} will stop'.format(self.name))
         self.stop_event.set()
 
 
-class Predictor(threading.Thread):
+class Predictor(Process):
 
-    def __init__(self, model, cap):
+    def __init__(self, modelargs, config, queue_in): #, cap):
         super(Predictor, self).__init__()
-        self.cap = cap
-        self.model = model
-        self.stop_event = threading.Event()
+        # self.cap = cap
+        self.modelargs = modelargs
+        self.config = config
+        self.stop_event = Event()
         self.queue = queue.Queue(QUEUE_SIZE)
-        self.name = 'Predictor '+str(model.insize[0])+'x'+str(model.insize[1])
-        self.insize = model.insize
+        self.queue_in = queue_in
+        # insize = (1920, 1080)
+        # self.name = 'Predictor '+str(insize[0])+'x'+str(insize[1])
+        # self.insize = insize
 
     # def run(self):
     #     while not self.stop_event.is_set():
@@ -90,7 +96,7 @@ class Predictor(threading.Thread):
     #             pass
 
     def get(self):
-        return self.queue.get(timeout=1)
+        return self.queue.get(timeout=100)
 
     def stop(self):
         logger.info('{} will stop'.format(self.name))
@@ -99,15 +105,19 @@ class Predictor(threading.Thread):
 
 class Predictor1(Predictor):
     def run(self):
+        model = create_model(self.modelargs, self.config)
+        self.model = model
+        self.insize = (1920, 1080)
         while not self.stop_event.is_set():
             try:
-                image, count = self.cap.get(1)
-                # print(count)
+                # image, count = self.cap.get(1)
+                image, count = self.queue_in.get(timeout=1)
+                # print('pred1 getting from cap:'+str(count)+'\n')
                 image = cv2.resize(image, self.insize)
                 with chainer.using_config('autotune', True), \
                      chainer.using_config('use_ideep', 'auto'):
                     feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-                self.queue.put((image, feature_map), timeout=1)
+                self.queue.put((image, feature_map), timeout=100)
                 print("pred1 queue: ", self.queue.qsize())
             except queue.Full:
                 pass
@@ -116,16 +126,22 @@ class Predictor1(Predictor):
 
 
 class Predictor2(Predictor):
+
     def run(self):
+        model = create_model(self.modelargs, self.config)
+        model.to_gpu(1)
+        self.model = model
+        self.insize = (224, 224)
         while not self.stop_event.is_set():
             try:
-                image, count = self.cap.get(2)
-                # print(count)
+                # image, count = self.cap.get(2)
+                image, count = self.queue_in.get(timeout=1)
+                # print('pred2 getting from cap:'+str(count)+'\n')
                 image = cv2.resize(image, self.insize)
                 with chainer.using_config('autotune', True), \
                      chainer.using_config('use_ideep', 'auto'):
                     feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-                self.queue.put((image, feature_map), timeout=1)
+                self.queue.put((image, feature_map), timeout=100)
                 print("pred2 queue: ", self.queue.qsize())
             except queue.Full:
                 pass
@@ -146,20 +162,26 @@ def load_config(args):
     return config1, config2
 
 
+
 def high_speed(args):
+    # set_start_method('spawn') -> leads to pickle error
     # model1 is 1920x1080
     config1, config2 = load_config(args)
     dataset_type1 = config1.get('dataset', 'type')
     detection_thresh1 = config1.getfloat('predict', 'detection_thresh')
     min_num_keypoints1 = config1.getint('predict', 'min_num_keypoints')
-    model1 = create_model(args.model1, config1)
+
+    # it seems not possible to create GPU related models outside the process, move inside
+    # model1 = create_model(args.model1, config1)
 
     # model2 is 224x224
     dataset_type2 = config2.get('dataset', 'type')
     detection_thresh2 = config2.getfloat('predict', 'detection_thresh')
     min_num_keypoints2 = config2.getint('predict', 'min_num_keypoints')
-    model2 = create_model(args.model2, config2)
-    model2.to_gpu(2) # TODO GET DEVICE RIGHT
+
+    # same as above - move inside process
+    # model2 = create_model(args.model2, config2)
+    # model2.to_gpu(2) # TODO GET DEVICE RIGHT
 
     if os.path.exists('mask.png'):
         mask = Image.open('mask.png')
@@ -179,68 +201,78 @@ def high_speed(args):
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
     logger.info('camera will capture {} FPS'.format(cap.get(cv2.CAP_PROP_FPS)))
 
-    capture = Capture(cap, model1.insize)
-    predictor1 = Predictor1(model=model1, cap=capture)
-    predictor2 = Predictor2(model=model2, cap=capture)
+    # queue_main = queue.Queue(QUEUE_SIZE)
+    queue_main = Queue(QUEUE_SIZE)
+    counter = 0
 
-    capture.start()
+    # capture = Capture(cap)
+    predictor1 = Predictor1(modelargs=args.model1, config=config1, queue_in=queue_main) #, cap=capture)
+    predictor2 = Predictor2(modelargs=args.model2, config=config2, queue_in=queue_main)
+
+    # capture.start()
     predictor1.start()
     predictor2.start()
 
-    fps_time = 0
-    degree = 0
+    while True:
+        ret_val, image = cap.read()
+        queue_main.put((image,  counter))
+        counter += 1
+        # pass
 
-    main_event = threading.Event()
-
-    try:
-        while not main_event.is_set() and cap.isOpened():
-            degree += 5
-            degree = degree % 360
-            try:
-                image, feature_map = predictor1.get()
-                image2, feature_map2 = predictor2.get()
-                humans = get_humans_by_feature(
-                    model1,
-                    feature_map,
-                    detection_thresh1,
-                    min_num_keypoints1
-                )
-            except queue.Empty:
-                continue
-            except Exception:
-                break
-            pilImg = Image.fromarray(image)
-            pilImg = draw_humans(
-                model1.keypoint_names,
-                model1.edges,
-                pilImg,
-                humans,
-                mask=mask.rotate(degree) if mask else None,
-                visbbox=config1.getboolean('predict', 'visbbox'),
-            )
-            img_with_humans = cv2.cvtColor(np.asarray(pilImg), cv2.COLOR_RGB2BGR)
-            msg = 'GPU ON' if chainer.backends.cuda.available else 'GPU OFF'
-            msg += ' ' + config1.get('model_param', 'model_name')
-            cv2.putText(img_with_humans, 'FPS: %f' % (1.0 / (time.time() - fps_time)),
-                        (10, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            img_with_humans = cv2.resize(img_with_humans, (int(1/3 * model1.insize[0]), int(1/3 * model1.insize[1])))
-            cv2.imshow('Pose Proposal Network' + msg, img_with_humans)
-            fps_time = time.time()
-            # press Esc to exit
-            if cv2.waitKey(1) == 27:
-                main_event.set()
-    except Exception as e:
-        print(e)
-    except KeyboardInterrupt:
-        main_event.set()
-
-    capture.stop()
-    predictor1.stop()
-    predictor2.stop()
-
-    capture.join()
-    predictor1.join()
-    predictor2.join()
+    # fps_time = 0
+    # degree = 0
+    #
+    # main_event = threading.Event()
+    #
+    # try:
+    #     while not main_event.is_set() and cap.isOpened():
+    #         degree += 5
+    #         degree = degree % 360
+    #         try:
+    #             image, feature_map = predictor1.get()
+    #             image2, feature_map2 = predictor2.get()
+    #             humans = get_humans_by_feature(
+    #                 model1,
+    #                 feature_map,
+    #                 detection_thresh1,
+    #                 min_num_keypoints1
+    #             )
+    #         except queue.Empty:
+    #             continue
+    #         except Exception:
+    #             break
+    #         pilImg = Image.fromarray(image)
+    #         pilImg = draw_humans(
+    #             model1.keypoint_names,
+    #             model1.edges,
+    #             pilImg,
+    #             humans,
+    #             mask=mask.rotate(degree) if mask else None,
+    #             visbbox=config1.getboolean('predict', 'visbbox'),
+    #         )
+    #         img_with_humans = cv2.cvtColor(np.asarray(pilImg), cv2.COLOR_RGB2BGR)
+    #         msg = 'GPU ON' if chainer.backends.cuda.available else 'GPU OFF'
+    #         msg += ' ' + config1.get('model_param', 'model_name')
+    #         cv2.putText(img_with_humans, 'FPS: %f' % (1.0 / (time.time() - fps_time)),
+    #                     (10, 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    #         img_with_humans = cv2.resize(img_with_humans, (int(1/3 * model1.insize[0]), int(1/3 * model1.insize[1])))
+    #         cv2.imshow('Pose Proposal Network' + msg, img_with_humans)
+    #         fps_time = time.time()
+    #         # press Esc to exit
+    #         if cv2.waitKey(1) == 27:
+    #             main_event.set()
+    # except Exception as e:
+    #     print(e)
+    # except KeyboardInterrupt:
+    #     main_event.set()
+    #
+    # capture.stop()
+    # predictor1.stop()
+    # predictor2.stop()
+    #
+    # capture.join()
+    # predictor1.join()
+    # predictor2.join()
 
 
 def parse_arguments():
