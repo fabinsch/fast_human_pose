@@ -107,25 +107,55 @@ def get_mpii_dataset(insize, image_root, annotations,
     # filename => keypoints, bbox, is_visible, is_labeled
     images = {}
 
+    # DEBUGGING OVERFITTING
+    # create a list containing the actual iamges in folder -> for debugging
+    from os import listdir
+    files = listdir(image_root)
+
     for filename in np.unique([anno['filename'] for anno in annotations]):
-        images[filename] = [], [], [], [], [], [] # include scale and position
+        if filename in files:
+            images[filename] = [], [], [], [], [], [] # include scale and position
 
     for anno in annotations:
-        is_visible = [anno['is_visible'][k] for k in KEYPOINT_NAMES[1:]]
-        if sum(is_visible) < min_num_keypoints:
-            continue
-        keypoints = [anno['joint_pos'][k][::-1] for k in KEYPOINT_NAMES[1:]]
+        if anno['filename'] in files:
+            is_visible = [anno['is_visible'][k] for k in KEYPOINT_NAMES[1:]]
+            if sum(is_visible) < min_num_keypoints:
+                continue
+            keypoints = [anno['joint_pos'][k][::-1] for k in KEYPOINT_NAMES[1:]]
 
-        x1, y1, x2, y2 = anno['head_rect']
+            x1, y1, x2, y2 = anno['head_rect']
 
-        entry = images[anno['filename']]
-        entry[0].append(np.array(keypoints))  # array of y,x
-        entry[1].append(np.array([x1, y1, x2 - x1, y2 - y1]))  # x, y, w, h
-        entry[2].append(np.array(is_visible, dtype=np.bool))
-        is_labeled = np.ones(len(is_visible), dtype=np.bool)
-        entry[3].append(is_labeled)
-        entry[4].append(np.array(anno['scale']))
-        entry[5].append(np.array(anno['position']))
+            entry = images[anno['filename']]
+            entry[0].append(np.array(keypoints))  # array of y,x
+            entry[1].append(np.array([x1, y1, x2 - x1, y2 - y1]))  # x, y, w, h
+            entry[2].append(np.array(is_visible, dtype=np.bool))
+            is_labeled = np.ones(len(is_visible), dtype=np.bool)
+            entry[3].append(is_labeled)
+            entry[4].append(np.array(anno['scale']))
+            entry[5].append(np.array(anno['position']))
+
+
+
+    # THIS IS THE OFFICIAL CODE WHEN ALL IMAGES OR USED
+    # for filename in np.unique([anno['filename'] for anno in annotations]):
+    #     images[filename] = [], [], [], [], [], [] # include scale and position
+    #
+    # for anno in annotations:
+    #     is_visible = [anno['is_visible'][k] for k in KEYPOINT_NAMES[1:]]
+    #     if sum(is_visible) < min_num_keypoints:
+    #         continue
+    #     keypoints = [anno['joint_pos'][k][::-1] for k in KEYPOINT_NAMES[1:]]
+    #
+    #     x1, y1, x2, y2 = anno['head_rect']
+    #
+    #     entry = images[anno['filename']]
+    #     entry[0].append(np.array(keypoints))  # array of y,x
+    #     entry[1].append(np.array([x1, y1, x2 - x1, y2 - y1]))  # x, y, w, h
+    #     entry[2].append(np.array(is_visible, dtype=np.bool))
+    #     is_labeled = np.ones(len(is_visible), dtype=np.bool)
+    #     entry[3].append(is_labeled)
+    #     entry[4].append(np.array(anno['scale']))
+    #     entry[5].append(np.array(anno['position']))
 
     # split dataset
     train_images, test_images = split_dataset_random(
@@ -146,7 +176,7 @@ def get_mpii_dataset(insize, image_root, annotations,
         image_paths=train_images,
         image_root=image_root,
         use_cache=use_cache,
-        do_augmentation=True
+        do_augmentation=False  # TODO must be True
     )
 
     test_set = KeypointDataset2D(
