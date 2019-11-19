@@ -120,7 +120,6 @@ class PoseProposalNet(chainer.link.Chain):
         logger.info('number of total parameters: {}'.format(num_param+num_param2))
 
 
-
     def get_outsize(self):
         inp = np.zeros((2, 3, self.insize[1], self.insize[0]), dtype=np.float32)
         out = self.forward(inp)
@@ -148,17 +147,22 @@ class PoseProposalNet(chainer.link.Chain):
         outW, outH = self.outsize
         gridW, gridH = self.gridsize
         K = len(self.keypoint_names)
+
+        # responsability delta
         delta = np.zeros((K, outH, outW), dtype=np.float32)
         tx = np.zeros((K, outH, outW), dtype=np.float32)
         ty = np.zeros((K, outH, outW), dtype=np.float32)
         tw = np.zeros((K, outH, outW), dtype=np.float32)
         th = np.zeros((K, outH, outW), dtype=np.float32)
+
+        # predicted edges
         te = np.zeros((
             len(self.edges),
             self.local_grid_size[1], self.local_grid_size[0],
             outH, outW), dtype=np.float32)
 
         # Set delta^i_k
+        # loop over several people
         for (x, y, w, h), points, labeled in zip(bbox, keypoints, is_labeled):
             if dataset_type == 'mpii':
                 partsW, partsH = self.parts_scale * math.sqrt(w * w + h * h) # half head diagonal
@@ -178,11 +182,11 @@ class PoseProposalNet(chainer.link.Chain):
                     continue
                 cy = yx[0] / gridH
                 cx = yx[1] / gridW
-                ix, iy = int(cx), int(cy)
+                ix, iy = int(cx), int(cy) # index of center point
                 sizeW = instanceW if k == 0 else partsW # head
                 sizeH = instanceH if k == 0 else partsH # rest of keypoints
-                if 0 <= iy < outH and 0 <= ix < outW: # if in output grid
-                    delta[k, iy, ix] = 1 # I think get the responsible cell
+                if 0 <= iy < outH and 0 <= ix < outW: # if key point in output grid
+                    delta[k, iy, ix] = 1 # get the responsible cell and set 1
                     tx[k, iy, ix] = cx - ix # construct the bounding box around joints
                     ty[k, iy, ix] = cy - iy
                     tw[k, iy, ix] = sizeW / inW
@@ -195,13 +199,15 @@ class PoseProposalNet(chainer.link.Chain):
                     continue
                 src_yx = points[s]
                 tar_yx = points[t]
+                # get index of joint in grid
+                # gridH, gridW is gridsize ratio between inW / outW and inH/outH (one step in x direction of output is this ratio step in input)
                 iyx = (int(src_yx[0] / gridH), int(src_yx[1] / gridW))
-                jyx = (int(tar_yx[0] / gridH) - iyx[0] + self.local_grid_size[1] // 2,
+                jyx = (int(tar_yx[0] / gridH) - iyx[0] + self.local_grid_size[1] // 2, # why this addition of local grid size //2
                        int(tar_yx[1] / gridW) - iyx[1] + self.local_grid_size[0] // 2)
 
                 if iyx[0] < 0 or iyx[1] < 0 or iyx[0] >= outH or iyx[1] >= outW:
                     continue
-                if jyx[0] < 0 or jyx[1] < 0 or jyx[0] >= self.local_grid_size[1] or jyx[1] >= self.local_grid_size[0]:
+                if jyx[0] < 0 or jyx[1] < 0 or jyx[0] >= self.local_grid_size[1] or jyx[1] >= self.local_grid_size[0]: # check if reachable
                     continue
 
                 te[ei, jyx[0], jyx[1], iyx[0], iyx[1]] = 1
@@ -268,6 +274,7 @@ class PoseProposalNet(chainer.link.Chain):
         y = feature_map[:, 3 * K:4 * K, :, :]
         w = feature_map[:, 4 * K:5 * K, :, :]
         h = feature_map[:, 5 * K:6 * K, :, :]
+        # edges e
         e = feature_map[:, 6 * K:, :, :].reshape((
             B,
             len(self.edges),

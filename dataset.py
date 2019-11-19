@@ -111,7 +111,7 @@ class KeypointDataset2D(DatasetMixin):
 
             if self.do_augmentation:
                 # image, keypoints, bbox = scale_fit_short(image, keypoints, bbox, length=int(min(h, w) * 1.25))
-                # TODO activate this line here and uncomment above resize_to_scale
+                # TODO activate this line here and uncomment above resize_to_scale when testing with real data
                 # image, keypoints, bbox = resize_to_scale(image, keypoints, bbox, scale=scale, insize=self.insize)
                 # utils.write_image(image, os.path.join('/home/fabian/Desktop/test/', self.image_paths[i]))
 
@@ -119,10 +119,12 @@ class KeypointDataset2D(DatasetMixin):
                 image, keypoints, bbox, is_labeled, is_visible, transform_param = self.transform(
                     image, keypoints, bbox, is_labeled, is_visible, self.dataset_type, scale)
                 # utils.write_image(image, os.path.join('/home/fabian/Desktop/test4/', self.image_paths[i]))
+
+                # should be one intend level up when tested with real dataset and resize_to_scale is deactivated
+                image, keypoints, bbox = resize(image, keypoints, bbox, (h, w))
+
             transform_param['do_augmentation'] = self.do_augmentation
 
-            # resizing not required at this point any more - done inside resize_to_scale function
-            image, keypoints, bbox = resize(image, keypoints, bbox, (h, w))
         except Exception as e:
             raise Exception("something wrong...transform_param = {}".format(transform_param))
 
