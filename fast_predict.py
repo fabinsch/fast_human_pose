@@ -15,15 +15,9 @@ from PIL import Image
 
 from predict import get_feature, get_humans_by_feature, draw_humans, create_model
 from utils import parse_size
-from multiprocessing import Process, Event, Queue, set_start_method
+from multiprocessing import Process, Event, Queue, set_start_method, Pipe
 
 QUEUE_SIZE = 0
-
-"""
-Bonus script
-If you have good USB camera which gets image as well as 60 FPS,
-this script will be helpful for realtime inference
-"""
 
 
 class Capture(Process):
@@ -67,7 +61,7 @@ class Capture(Process):
 
 class Predictor(Process):
 
-    def __init__(self, modelargs, config, queue_in): #, cap):
+    def __init__(self, modelargs, config, queue_in, pipe_end, detection_threshold, min_num_keypoints): #, cap):
         super(Predictor, self).__init__()
         # self.cap = cap
         self.modelargs = modelargs
@@ -75,25 +69,16 @@ class Predictor(Process):
         self.stop_event = Event()
         self.queue = queue.Queue(QUEUE_SIZE)
         self.queue_in = queue_in
+        self.pipe_end = pipe_end
+        self.model = None
+        self.insize = None
+        self.detection_threshold = detection_threshold
+        self.min_num_keypoints = min_num_keypoints
+        self.count = 0
+        logger.info('{} initializing and loading model'.format(self.name))
         # insize = (1920, 1080)
         # self.name = 'Predictor '+str(insize[0])+'x'+str(insize[1])
         # self.insize = insize
-
-    # def run(self):
-    #     while not self.stop_event.is_set():
-    #         try:
-    #             image, count = self.cap.get()
-    #             # print(count)
-    #             image = cv2.resize(image, self.insize)
-    #             with chainer.using_config('autotune', True), \
-    #                     chainer.using_config('use_ideep', 'auto'):
-    #                 feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-    #             self.queue.put((image, feature_map), timeout=1)
-    #             print("pred queue: ", self.queue.qsize())
-    #         except queue.Full:
-    #             pass
-    #         except queue.Empty:
-    #             pass
 
     def get(self):
         return self.queue.get(timeout=100)
@@ -106,47 +91,110 @@ class Predictor(Process):
 class Predictor1(Predictor):
     def run(self):
         model = create_model(self.modelargs, self.config)
+        logger.info('{} started at PID {}'.format(self.name, self.pid))
+        model = model.to_gpu(0)
         self.model = model
         self.insize = (1920, 1080)
+        self.pipe_end.send(True)  # model loaded sign
+        count = 0
         while not self.stop_event.is_set():
             try:
-                # image, count = self.cap.get(1)
-                image, count = self.queue_in.get(timeout=1)
-                # print('pred1 getting from cap:'+str(count)+'\n')
-                image = cv2.resize(image, self.insize)
-                with chainer.using_config('autotune', True), \
-                     chainer.using_config('use_ideep', 'auto'):
-                    feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-                self.queue.put((image, feature_map), timeout=100)
-                print("pred1 queue: ", self.queue.qsize())
+                if self.pipe_end.poll(timeout=1):
+                    t_start = time.time()
+                    # image, count = self.cap.get(1)
+                    image, count = self.queue_in.get(timeout=1)
+                    logger.info('get img from queue took {} sec'.format(time.time()-t_start))
+
+                    # print('pred1 getting from cap:'+str(count)+'\n')
+                    image = cv2.resize(image, self.insize)
+                    with chainer.using_config('autotune', True), \
+                         chainer.using_config('use_ideep', 'auto'):
+                        feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
+                    self.queue.put((image, feature_map), timeout=0.1)
+                    #humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
+                    #self.cut_human(image, humans)
+                    logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
+                    self.pipe_end.send(2)  # sign that big model passed first forward path
+                else:
+                    print("waiting for other model to load....")
+                    if self.pipe_end.recv() == 'stop':
+                        print("STOP")
             except queue.Full:
                 pass
             except queue.Empty:
-                pass
+                if count > 0 and self.pipe_end.recv() == 'stop':
+                    print(self.name, " processed ", self.queue.qsize(), "images")
+                    self.stop()
+                else:
+                    pass
+            except cv2.error:
+                print("cv2 error")
+                print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info('{} exiting'.format(self.name))
+                self.pipe_end.send('stop')
+                time.sleep(1)
+                self.stop()
+            except KeyboardInterrupt:
+                self.pipe_end.send('stop')
+                self.stop()
+
+
+    def cut_human(self, image, humans):
+        # loop through humans to cut image
+        if len(humans) > 0:
+            for h in humans[0].values():
+                print(h)
 
 
 class Predictor2(Predictor):
 
     def run(self):
         model = create_model(self.modelargs, self.config)
-        model.to_gpu(1)
+        logger.info('{} started at PID {}'.format(self.name, self.pid))
+        model = model.to_gpu(1)
         self.model = model
         self.insize = (224, 224)
+        self.pipe_end.send(True)  # model loaded sign
+        count = 0
         while not self.stop_event.is_set():
             try:
-                # image, count = self.cap.get(2)
-                image, count = self.queue_in.get(timeout=1)
-                # print('pred2 getting from cap:'+str(count)+'\n')
-                image = cv2.resize(image, self.insize)
-                with chainer.using_config('autotune', True), \
-                     chainer.using_config('use_ideep', 'auto'):
-                    feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-                self.queue.put((image, feature_map), timeout=100)
-                print("pred2 queue: ", self.queue.qsize())
+                if self.pipe_end.poll(timeout=1):
+                    t_start = time.time()
+                    # image, count = self.cap.get(2)
+                    image, count = self.queue_in.get(timeout=1)
+                    logger.info('get img from queue took {} sec'.format(time.time()-t_start))
+                    # print('pred2 getting from cap:'+str(count)+'\n')
+                    image = cv2.resize(image, self.insize)
+                    with chainer.using_config('autotune', True), \
+                         chainer.using_config('use_ideep', 'auto'):
+                        feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
+                    self.queue.put((image, feature_map), timeout=0.1)
+                    logger.debug("pred2 queue: {}".format(self.queue.qsize()))
+                    while not self.pipe_end.recv() == 2:
+                        print("waiting for first forward path of bigger model")
+                        time.sleep(1)
+                else:
+                    print("waiting for other model to load....")
+                    if self.pipe_end.recv() == 'stop':
+                        print("STOP")
             except queue.Full:
                 pass
             except queue.Empty:
-                pass
+                if count > 0 and self.pipe_end.recv() == 'stop':
+                    print(self.name, " processed ", self.queue.qsize(), "images")
+                    self.stop()
+                else:
+                    pass
+            except cv2.error:
+                print("cv2 error")
+                print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info('{} exiting'.format(self.name))
+                self.pipe_end.send('stop')
+                time.sleep(10)
+                self.stop()
+            except KeyboardInterrupt:
+                self.pipe_end.send('stop')
+                self.stop()
 
 
 def load_config(args):
@@ -160,7 +208,6 @@ def load_config(args):
     logger.info(config_path2)
     config2.read(config_path2, 'UTF-8')
     return config1, config2
-
 
 
 def high_speed(args):
@@ -183,6 +230,7 @@ def high_speed(args):
     # model2 = create_model(args.model2, config2)
     # model2.to_gpu(2) # TODO GET DEVICE RIGHT
 
+    # what is the mask for ??
     if os.path.exists('mask.png'):
         mask = Image.open('mask.png')
         mask = mask.resize((200, 200))
@@ -205,19 +253,39 @@ def high_speed(args):
     queue_main = Queue(QUEUE_SIZE)
     counter = 0
 
+    # instantiate the processes
     # capture = Capture(cap)
-    predictor1 = Predictor1(modelargs=args.model1, config=config1, queue_in=queue_main) #, cap=capture)
-    predictor2 = Predictor2(modelargs=args.model2, config=config2, queue_in=queue_main)
+    fast_conn, reg_conn = Pipe()  # pipe for communication between models
+    predictor1 = Predictor1(
+        modelargs=args.model1,
+        config=config1,
+        queue_in=queue_main,
+        pipe_end=reg_conn,
+        detection_threshold=detection_thresh1,
+        min_num_keypoints=min_num_keypoints1)
+    predictor2 = Predictor2(
+        modelargs=args.model2,
+        config=config2,
+        queue_in=queue_main,
+        pipe_end=fast_conn,
+        detection_threshold=detection_thresh2,
+        min_num_keypoints=min_num_keypoints2)
 
-    # capture.start()
-    predictor1.start()
-    predictor2.start()
-
-    while True:
+    # first read in the whole video stream and later process by parallel running networks
+    # TODO also do this in parallel
+    ret_val = True
+    t_start = time.time()
+    while ret_val:
         ret_val, image = cap.read()
         queue_main.put((image,  counter))
         counter += 1
         # pass
+    logger.info('loading video with {} frames took: {} seconds'.format(counter, time.time()-t_start))
+
+    # start the processes
+    # capture.start()
+    predictor1.start()  # 1920x1080
+    predictor2.start()  # 224x224
 
     # fps_time = 0
     # degree = 0
@@ -269,10 +337,11 @@ def high_speed(args):
     # capture.stop()
     # predictor1.stop()
     # predictor2.stop()
-    #
+
+    # Stop the processes in order to exit the main program
     # capture.join()
-    # predictor1.join()
-    # predictor2.join()
+    predictor1.join()
+    predictor2.join()
 
 
 def parse_arguments():
