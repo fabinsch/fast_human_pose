@@ -97,44 +97,64 @@ class Predictor1(Predictor):
         self.insize = (1920, 1080)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
+        inf_time = 0
+        queue_get_time = 0
         while not self.stop_event.is_set():
             try:
                 if self.pipe_end.poll(timeout=1):
                     t_start = time.time()
                     # image, count = self.cap.get(1)
                     image, count = self.queue_in.get(timeout=1)
-                    logger.info('get img from queue took {} sec'.format(time.time()-t_start))
+                    queue_get_time += time.time() - t_start
+                    # logger.info('get img from queue took {} sec'.format(time.time()-t_start))
 
                     # print('pred1 getting from cap:'+str(count)+'\n')
                     image = cv2.resize(image, self.insize)
+                    t_start = time.time()
                     with chainer.using_config('autotune', True), \
                          chainer.using_config('use_ideep', 'auto'):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
+                    if not self.queue.empty():
+                        inf_time += time.time() - t_start
                     self.queue.put((image, feature_map), timeout=0.1)
                     #humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
                     #self.cut_human(image, humans)
-                    logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
+                    #logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
                     self.pipe_end.send(2)  # sign that big model passed first forward path
                 else:
                     print("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
-                        print("STOP")
+                        print("STOP received via pipe")
+                    if self.queue_in.qsize()==0 and self.queue.qsize()>0:
+                        self.pipe_end.send('stop')
+                        self.stop()
             except queue.Full:
+                logger.info("queue full")
                 pass
             except queue.Empty:
-                if count > 0 and self.pipe_end.recv() == 'stop':
-                    print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info("queue empty")
+                if self.queue.qsize() > 0:  #and self.pipe_end.recv() == 'stop':
+                    # print(self.name, " processed ", self.queue.qsize(), "images")
+                    logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
+                    logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize())))
+                    logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
                     self.stop()
                 else:
                     pass
             except cv2.error:
-                print("cv2 error")
-                print(self.name, " processed ", self.queue.qsize(), "images")
+                # print("cv2 error")
+                # print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info("CV2 error")
+                logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
                 logger.info('{} exiting'.format(self.name))
+                logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
+                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 time.sleep(1)
                 self.stop()
             except KeyboardInterrupt:
+                logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
+                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
 
@@ -156,43 +176,64 @@ class Predictor2(Predictor):
         self.insize = (224, 224)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
+        inf_time = 0
+        queue_get_time = 0
         while not self.stop_event.is_set():
             try:
                 if self.pipe_end.poll(timeout=1):
                     t_start = time.time()
                     # image, count = self.cap.get(2)
                     image, count = self.queue_in.get(timeout=1)
-                    logger.info('get img from queue took {} sec'.format(time.time()-t_start))
+                    queue_get_time += time.time()-t_start
+                    #logger.info('get img from queue took {} sec'.format(time.time()-t_start))
                     # print('pred2 getting from cap:'+str(count)+'\n')
                     image = cv2.resize(image, self.insize)
+                    t_start = time.time()
                     with chainer.using_config('autotune', True), \
                          chainer.using_config('use_ideep', 'auto'):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
-                    self.queue.put((image, feature_map), timeout=0.1)
-                    logger.debug("pred2 queue: {}".format(self.queue.qsize()))
+                    if not self.queue.empty():
+                        inf_time = time.time() - t_start
+                    self.queue.put((image, feature_map), timeout=1)
+                    #logger.debug("pred2 queue: {}".format(self.queue.qsize()))
                     while not self.pipe_end.recv() == 2:
                         print("waiting for first forward path of bigger model")
                         time.sleep(1)
                 else:
                     print("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
-                        print("STOP")
+                        print("STOP received via pipe")
+                    if self.queue_in.qsize()==0 and self.queue.qsize()>0:
+                        self.pipe_end.send('stop')
+                        self.stop()
+
             except queue.Full:
+                logger.info("queue full")
                 pass
             except queue.Empty:
-                if count > 0 and self.pipe_end.recv() == 'stop':
-                    print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info("queue empty")
+                if self.queue.qsize() > 0:  # self.pipe_end.recv() == 'stop':
+                    # print(self.name, " processed ", self.queue.qsize(), "images")
+                    logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
+                    logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize() - 1)))
+                    logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                     self.stop()
                 else:
                     pass
             except cv2.error:
-                print("cv2 error")
-                print(self.name, " processed ", self.queue.qsize(), "images")
+                # print("cv2 error")
+                # print(self.name, " processed ", self.queue.qsize(), "images")
+                logger.info("CV2 error")
+                logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
                 logger.info('{} exiting'.format(self.name))
+                logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
+                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 time.sleep(10)
                 self.stop()
             except KeyboardInterrupt:
+                logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
+                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
 
@@ -277,8 +318,10 @@ def high_speed(args):
     t_start = time.time()
     while ret_val:
         ret_val, image = cap.read()
-        queue_main.put((image,  counter))
-        counter += 1
+        if ret_val:
+            # image = cv2.resize(image, (224, 224))  # get timings with smaller image size in queue
+            queue_main.put((image,  counter))
+            counter += 1
         # pass
     logger.info('loading video with {} frames took: {} seconds'.format(counter, time.time()-t_start))
 
