@@ -116,13 +116,14 @@ class Predictor1(Predictor):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
                     if not self.queue.empty():
                         inf_time += time.time() - t_start
-                    self.queue.put((image, feature_map), timeout=0.1)
+                    # self.queue.put((image, feature_map), timeout=1)
+                    self.queue.put((feature_map), timeout=1)
                     #humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
                     #self.cut_human(image, humans)
                     #logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
                     self.pipe_end.send(2)  # sign that big model passed first forward path
                 else:
-                    print("waiting for other model to load....")
+                    logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
                         print("STOP received via pipe")
                     if self.queue_in.qsize()==0 and self.queue.qsize()>0:
@@ -194,16 +195,17 @@ class Predictor2(Predictor):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
                     if not self.queue.empty():
                         inf_time = time.time() - t_start
-                    self.queue.put((image, feature_map), timeout=1)
+                    # self.queue.put((image, feature_map), timeout=1)
+                    self.queue.put((feature_map), timeout=1)
                     #logger.debug("pred2 queue: {}".format(self.queue.qsize()))
                     while not self.pipe_end.recv() == 2:
                         print("waiting for first forward path of bigger model")
-                        time.sleep(1)
+                        time.sleep(0.1)
                 else:
-                    print("waiting for other model to load....")
+                    logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
                         print("STOP received via pipe")
-                    if self.queue_in.qsize()==0 and self.queue.qsize()>0:
+                    if self.queue_in.qsize() == 0 and self.queue.qsize() > 0:
                         self.pipe_end.send('stop')
                         self.stop()
 
