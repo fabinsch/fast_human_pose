@@ -15,12 +15,12 @@ from PIL import Image
 
 from predict import get_feature, get_humans_by_feature, draw_humans, create_model
 from utils import parse_size
-from multiprocessing import Process, Event, set_start_method, Pipe
+from multiprocessing import Process, Event, set_start_method, Pipe, Queue
 import copy
 
 QUEUE_SIZE = 0
 
-from queue import Queue
+# from queue import Queue
 
 
 class Capture(Process):
@@ -58,7 +58,6 @@ class Capture(Process):
             return self.queue2.get(timeout=100)
 
     def stop(self):
-        logger.info('{} will stop'.format(self.name))
         self.stop_event.set()
 
 
@@ -79,6 +78,8 @@ class Predictor(Process):
         self.detection_threshold = detection_threshold
         self.min_num_keypoints = min_num_keypoints
         self.count = 0
+        self.inf_time = 0
+        self.queue_get_time = 0
         logger.info('{} initializing and loading model'.format(self.name))
         # insize = (1920, 1080)
         # self.name = 'Predictor '+str(insize[0])+'x'+str(insize[1])
@@ -89,7 +90,12 @@ class Predictor(Process):
 
     def stop(self):
         logger.info('{} will stop'.format(self.name))
+        logger.info("{} processed {} images in {}".format(self.name, self.queue.qsize(), self.insize))
+        logger.info("getting from queue average: {}s".format(self.queue_get_time / (self.queue.qsize())))
+        logger.info("inference time average: {}s".format(self.inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
+
         self.stop_event.set()
+        self.pipe_end.close()
 
 
 class Predictor1(Predictor):
@@ -102,8 +108,6 @@ class Predictor1(Predictor):
         self.insize = (1920, 1080)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
-        inf_time = 0
-        queue_get_time = 0
         run = False
         if self.pipe_end.recv():
             logger.info("start running 1920x1080")
@@ -111,11 +115,11 @@ class Predictor1(Predictor):
 
         while not self.stop_event.is_set():
             try:
-                if run:
+                if run and not self.pipe_end.poll():
                     t_start = time.time()
                     # image, count = self.cap.get(1)
                     image, count = self.queue_in.get(timeout=1)
-                    queue_get_time += time.time() - t_start
+                    self.queue_get_time += time.time() - t_start
                     # logger.info('get img from queue took {} sec'.format(time.time()-t_start))
 
                     # print('pred1 getting from cap:'+str(count)+'\n')
@@ -125,17 +129,18 @@ class Predictor1(Predictor):
                          chainer.using_config('use_ideep', 'auto'):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
                     if not self.queue.empty():
-                        inf_time += time.time() - t_start
+                        self.inf_time += time.time() - t_start
                     # self.queue.put((image, feature_map), timeout=1)
                     self.queue.put((feature_map), timeout=1)
-                    #humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
-                    #self.cut_human(image, humans)
-                    #logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
-                    self.pipe_end.send(2)  # sign that big model passed first forward path
+                    humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
+                    self.cut_human(image, humans)
+                    # logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
+                    if self.queue.qsize() == 1: self.pipe_end.send(2)  # sign that big model passed first forward path
                 else:
-                    logger.info("waiting for other model to load....")
+                    # logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
-                        print("STOP received via pipe")
+                        logger.info("STOP received via pipe")
+                        self.stop()
                     if self.queue_in.qsize()==0 and self.queue.qsize()>0:
                         self.pipe_end.send('stop')
                         self.stop()
@@ -146,9 +151,9 @@ class Predictor1(Predictor):
                 logger.info("queue empty")
                 if self.queue.qsize() > 0:  #and self.pipe_end.recv() == 'stop':
                     # print(self.name, " processed ", self.queue.qsize(), "images")
-                    logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
-                    logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize())))
-                    logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
+                    # logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
+                    # logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize())))
+                    # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
                     self.stop()
                 else:
                     pass
@@ -158,14 +163,14 @@ class Predictor1(Predictor):
                 logger.info("CV2 error")
                 logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
                 logger.info('{} exiting'.format(self.name))
-                logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
-                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                # logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
+                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 time.sleep(1)
                 self.stop()
             except KeyboardInterrupt:
-                logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
-                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                # logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
+                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
 
@@ -188,19 +193,31 @@ class Predictor2(Predictor):
         self.insize = (224, 224)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
-        inf_time = 0
-        queue_get_time = 0
         run = False
         if self.pipe_end.recv():
             logger.info("start running 224x224")
             run = True
+
+        # run the first forward path to get model autotune right
+        # than wait for bigger model to complete first forward path
+        image, count = self.queue_in.get(timeout=1)
+        image = cv2.resize(image, self.insize)
+        with chainer.using_config('autotune', True), \
+             chainer.using_config('use_ideep', 'auto'):
+            feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
+        # self.queue.put((image, feature_map), timeout=1)
+        self.queue.put((feature_map), timeout=1)
+
+        if self.pipe_end.recv() == 2:
+            pass
+
         while not self.stop_event.is_set():
             try:
                 if run:
                     t_start = time.time()
                     # image, count = self.cap.get(2)
                     image, count = self.queue_in.get(timeout=1)
-                    queue_get_time += time.time()-t_start
+                    self.queue_get_time += time.time()-t_start
                     #logger.info('get img from queue took {} sec'.format(time.time()-t_start))
                     # print('pred2 getting from cap:'+str(count)+'\n')
                     image = cv2.resize(image, self.insize)
@@ -209,13 +226,13 @@ class Predictor2(Predictor):
                          chainer.using_config('use_ideep', 'auto'):
                         feature_map = get_feature(self.model, image.transpose(2, 0, 1).astype(np.float32))
                     if not self.queue.empty():
-                        inf_time = time.time() - t_start
+                        self.inf_time = time.time() - t_start
                     # self.queue.put((image, feature_map), timeout=1)
                     self.queue.put((feature_map), timeout=1)
                     #logger.debug("pred2 queue: {}".format(self.queue.qsize()))
-                    while not self.pipe_end.recv() == 2:
-                        print("waiting for first forward path of bigger model")
-                        time.sleep(0.1)
+                    # while not self.pipe_end.recv() == 2:
+                    #     print("waiting for first forward path of bigger model")
+                    #     time.sleep(0.1)
                 else:
                     logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
@@ -231,9 +248,10 @@ class Predictor2(Predictor):
                 logger.info("queue empty")
                 if self.queue.qsize() > 0:  # self.pipe_end.recv() == 'stop':
                     # print(self.name, " processed ", self.queue.qsize(), "images")
-                    logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
-                    logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize() - 1)))
-                    logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                    # logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
+                    # logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize() - 1)))
+                    # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                    self.pipe_end.send('stop')
                     self.stop()
                 else:
                     pass
@@ -241,16 +259,16 @@ class Predictor2(Predictor):
                 # print("cv2 error")
                 # print(self.name, " processed ", self.queue.qsize(), "images")
                 logger.info("CV2 error")
-                logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
+                # logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
                 logger.info('{} exiting'.format(self.name))
-                logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
-                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                # logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
+                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 time.sleep(10)
                 self.stop()
             except KeyboardInterrupt:
-                logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
-                logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
+                # logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
+                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
 
@@ -320,11 +338,11 @@ def high_speed(args):
         ret_val, image = cap.read()
         if ret_val:
             # image = cv2.resize(image, (224, 224))  # get timings with smaller image size in queue
-            if counter < 20: queue_main.put((image,  counter))
+            if counter < 40: queue_main.put((image,  counter))
             counter += 1
         # pass
     logger.info('loading video with {} frames took: {} seconds'.format(counter, time.time()-t_start))
-    queue_copy = copy.copy(queue_main)
+    # queue_copy = copy.copy(queue_main)
     # instantiate the processes
     # capture = Capture(cap)
     fast_conn, reg_conn = Pipe()  # pipe for communication between models
@@ -338,7 +356,7 @@ def high_speed(args):
     predictor2 = Predictor2(
         modelargs=args.model2,
         config=config2,
-        queue_in=queue_copy,
+        queue_in=queue_main,
         pipe_end=fast_conn,
         detection_threshold=detection_thresh2,
         min_num_keypoints=min_num_keypoints2)
