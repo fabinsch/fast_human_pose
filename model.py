@@ -6,7 +6,7 @@ from chainer import reporter
 import chainer.functions as F
 import chainer.links as L
 from chainer import initializers
-import cupy
+# import cupy
 
 import logging
 logger = logging.getLogger(__name__)
