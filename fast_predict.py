@@ -15,9 +15,12 @@ from PIL import Image
 
 from predict import get_feature, get_humans_by_feature, draw_humans, create_model
 from utils import parse_size
-from multiprocessing import Process, Event, Queue, set_start_method, Pipe
+from multiprocessing import Process, Event, set_start_method, Pipe
+import copy
 
 QUEUE_SIZE = 0
+
+from queue import Queue
 
 
 class Capture(Process):
@@ -67,9 +70,10 @@ class Predictor(Process):
         self.modelargs = modelargs
         self.config = config
         self.stop_event = Event()
-        self.queue = queue.Queue(QUEUE_SIZE)
+        self.queue = Queue(QUEUE_SIZE)
         self.queue_in = queue_in
         self.pipe_end = pipe_end
+        print(queue_in)
         self.model = None
         self.insize = None
         self.detection_threshold = detection_threshold
@@ -91,17 +95,23 @@ class Predictor(Process):
 class Predictor1(Predictor):
     def run(self):
         model = create_model(self.modelargs, self.config)
-        logger.info('{} started at PID {}'.format(self.name, self.pid))
-        model = model.to_gpu(0)
+        logger.info('{} started at PID {} - 1920x1080 model loaded'.format(self.name, self.pid))
+        if chainer.backends.cuda.available:
+            model = model.to_gpu(0)
         self.model = model
         self.insize = (1920, 1080)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
         inf_time = 0
         queue_get_time = 0
+        run = False
+        if self.pipe_end.recv():
+            logger.info("start running 1920x1080")
+            run = True
+
         while not self.stop_event.is_set():
             try:
-                if self.pipe_end.poll(timeout=1):
+                if run:
                     t_start = time.time()
                     # image, count = self.cap.get(1)
                     image, count = self.queue_in.get(timeout=1)
@@ -171,17 +181,22 @@ class Predictor2(Predictor):
 
     def run(self):
         model = create_model(self.modelargs, self.config)
-        logger.info('{} started at PID {}'.format(self.name, self.pid))
-        model = model.to_gpu(1)
+        logger.info('{} started at PID {} - 224x224 model loaded'.format(self.name, self.pid))
+        if chainer.backends.cuda.available:
+            model = model.to_gpu(1)
         self.model = model
         self.insize = (224, 224)
         self.pipe_end.send(True)  # model loaded sign
         count = 0
         inf_time = 0
         queue_get_time = 0
+        run = False
+        if self.pipe_end.recv():
+            logger.info("start running 224x224")
+            run = True
         while not self.stop_event.is_set():
             try:
-                if self.pipe_end.poll(timeout=1):
+                if run:
                     t_start = time.time()
                     # image, count = self.cap.get(2)
                     image, count = self.queue_in.get(timeout=1)
@@ -281,7 +296,8 @@ def high_speed(args):
         mask = None
 
     # cap = cv2.VideoCapture(0) # get input from usb camera
-    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
+    cap = cv2.VideoCapture('/home/mech-user/Documents/fabian/chainer-pose-proposal-net/work/video/test.mp4')
+    # cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)
@@ -296,6 +312,19 @@ def high_speed(args):
     queue_main = Queue(QUEUE_SIZE)
     counter = 0
 
+    # first read in the whole video stream and later process by parallel running networks
+    # TODO also do this in parallel
+    ret_val = True
+    t_start = time.time()
+    while ret_val:
+        ret_val, image = cap.read()
+        if ret_val:
+            # image = cv2.resize(image, (224, 224))  # get timings with smaller image size in queue
+            if counter < 20: queue_main.put((image,  counter))
+            counter += 1
+        # pass
+    logger.info('loading video with {} frames took: {} seconds'.format(counter, time.time()-t_start))
+    queue_copy = copy.copy(queue_main)
     # instantiate the processes
     # capture = Capture(cap)
     fast_conn, reg_conn = Pipe()  # pipe for communication between models
@@ -309,23 +338,12 @@ def high_speed(args):
     predictor2 = Predictor2(
         modelargs=args.model2,
         config=config2,
-        queue_in=queue_main,
+        queue_in=queue_copy,
         pipe_end=fast_conn,
         detection_threshold=detection_thresh2,
         min_num_keypoints=min_num_keypoints2)
 
-    # first read in the whole video stream and later process by parallel running networks
-    # TODO also do this in parallel
-    ret_val = True
-    t_start = time.time()
-    while ret_val:
-        ret_val, image = cap.read()
-        if ret_val:
-            # image = cv2.resize(image, (224, 224))  # get timings with smaller image size in queue
-            queue_main.put((image,  counter))
-            counter += 1
-        # pass
-    logger.info('loading video with {} frames took: {} seconds'.format(counter, time.time()-t_start))
+
 
     # start the processes
     # capture.start()
