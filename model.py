@@ -384,5 +384,12 @@ class PoseProposalNet(chainer.link.Chain):
             self.local_grid_size[1], self.local_grid_size[0],
             outH, outW
         ))
-        print("done")
+        resp = chainer.backends.cuda.to_cpu(resp.array)
+        conf = chainer.backends.cuda.to_cpu(conf.array)
+        w = chainer.backends.cuda.to_cpu(w.array)
+        h = chainer.backends.cuda.to_cpu(h.array)
+        x = chainer.backends.cuda.to_cpu(x.array)
+        y = chainer.backends.cuda.to_cpu(y.array)
+        e = chainer.backends.cuda.to_cpu(e.array)
+
         return resp, conf, x, y, w, h, e

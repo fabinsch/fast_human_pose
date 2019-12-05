@@ -47,11 +47,8 @@ class Capture(Process):
                 ret_val, image = self.cap.read()
                 self.count += 1
                 image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-                # move resizing to predictor
-                # image = cv2.resize(image, self.insize)
                 self.queue1.put((image, self.count), timeout=100)
                 self.queue2.put((image, self.count), timeout=100)
-                #print("read queue: ", self.queue1.qsize())
             except queue.Full:
                 pass
             except cv2.error:
@@ -136,6 +133,7 @@ class Predictor(Process):
             image_set.append(np.moveaxis(image, 0, 2))
         return image_set
 
+
 class Predictor1(Predictor):
     def run(self):
         model = create_model(self.modelargs, self.config)
@@ -178,7 +176,7 @@ class Predictor1(Predictor):
                     if self.queue.qsize() == 1: self.pipe_end.send(2)  # sign that big model passed first forward path
 
                     ## BLOCK ON PORPUSE ##
-                    block = True
+                    block = False
                     while block:
                         time.sleep(2)
                         pass
@@ -196,28 +194,16 @@ class Predictor1(Predictor):
                 pass
             except queue.Empty:
                 logger.info("queue empty")
-                if self.queue.qsize() > 0:  #and self.pipe_end.recv() == 'stop':
-                    # print(self.name, " processed ", self.queue.qsize(), "images")
-                    # logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
-                    # logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize())))
-                    # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
+                if self.queue.qsize() > 0:
                     self.stop()
                 else:
                     pass
             except cv2.error:
-                # print("cv2 error")
-                # print(self.name, " processed ", self.queue.qsize(), "images")
                 logger.info("CV2 error")
-                logger.info("{} processed {} images in 1920x1080".format(self.name, self.queue.qsize()))
-                logger.info('{} exiting'.format(self.name))
-                # logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
-                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 time.sleep(1)
                 self.stop()
             except KeyboardInterrupt:
-                # logger.info("getting from queue average: {}s".format(queue_get_time/self.queue.qsize()))
-                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
             except:
@@ -243,7 +229,7 @@ class Predictor2(Predictor):
             logger.info("start running 224x224")
             run = True
 
-        # run the first forward path to get model autotune right
+        # run the first forward path to get model auto tune right
         # than wait for bigger model to complete first forward path
         image, count = self.queue_in.get(timeout=1)
         image = cv2.resize(image, self.insize)
@@ -263,8 +249,6 @@ class Predictor2(Predictor):
                     # image, count = self.cap.get(2)
                     image, count = self.queue_in.get(timeout=1)
                     self.queue_get_time += time.time()-t_start
-
-
                     try:
                         humans = self.queue_comm.get(timeout=1)
                         # if humans: print(humans)
@@ -273,9 +257,9 @@ class Predictor2(Predictor):
                         logger.info('humans queue empty')
                         cropped_image_set = self.random_crop(image, 20)
 
-                    self.model.predict_video(cropped_image_set)
+                    feature_map = self.model.predict_video(cropped_image_set)
 
-                    #logger.info('get img from queue took {} sec'.format(time.time()-t_start))
+                    # logger.info('get img from queue took {} sec'.format(time.time()-t_start))
                     # print('pred2 getting from cap:'+str(count)+'\n')
                     image = cv2.resize(image, self.insize)
                     # print(cropped_image_set)
@@ -288,9 +272,7 @@ class Predictor2(Predictor):
                     # self.queue.put((image, feature_map), timeout=1)
                     self.queue.put((feature_map), timeout=1) # maybe not needed to be a queue, just internal storage of process
                     #logger.debug("pred2 queue: {}".format(self.queue.qsize()))
-                    # while not self.pipe_end.recv() == 2:
-                    #     print("waiting for first forward path of bigger model")
-                    #     time.sleep(0.1)
+
                 else:
                     logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
@@ -305,28 +287,17 @@ class Predictor2(Predictor):
             except queue.Empty:
                 logger.info("queue empty")
                 if self.queue.qsize() > 0:  # self.pipe_end.recv() == 'stop':
-                    # print(self.name, " processed ", self.queue.qsize(), "images")
-                    # logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
-                    # logger.info("getting from queue average: {}s".format(queue_get_time / (self.queue.qsize() - 1)))
-                    # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                     self.pipe_end.send('stop')
                     self.stop()
                 else:
                     pass
             except cv2.error:
-                # print("cv2 error")
-                # print(self.name, " processed ", self.queue.qsize(), "images")
                 logger.info("CV2 error")
-                # logger.info("{} processed {} images in 224x224".format(self.name, self.queue.qsize()))
                 logger.info('{} exiting'.format(self.name))
-                # logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
-                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
-                time.sleep(10)
+                time.sleep(1)
                 self.stop()
             except KeyboardInterrupt:
-                # logger.info("getting from queue average: {}s".format(queue_get_time/(self.queue.qsize() - 1)))
-                # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
             except:
@@ -351,7 +322,6 @@ def load_config(args):
 
 
 def high_speed(args):
-    # set_start_method('spawn') -> leads to pickle error
     # model1 is 1920x1080
     config1, config2 = load_config(args)
     dataset_type1 = config1.get('dataset', 'type')
@@ -365,17 +335,6 @@ def high_speed(args):
     dataset_type2 = config2.get('dataset', 'type')
     detection_thresh2 = config2.getfloat('predict', 'detection_thresh')
     min_num_keypoints2 = config2.getint('predict', 'min_num_keypoints')
-
-    # same as above - move inside process
-    # model2 = create_model(args.model2, config2)
-    # model2.to_gpu(2) # TODO GET DEVICE RIGHT
-
-    # what is the mask for ??
-    if os.path.exists('mask.png'):
-        mask = Image.open('mask.png')
-        mask = mask.resize((200, 200))
-    else:
-        mask = None
 
     # cap = cv2.VideoCapture(0) # get input from usb camera
     # cap = cv2.VideoCapture('/home/mech-user/Documents/fabian/chainer-pose-proposal-net/work/video/test.mp4')
