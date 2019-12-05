@@ -8,6 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 import chainercv.transforms as transforms
+import sys
 
 import chainer
 import cv2
@@ -18,6 +19,11 @@ from predict import get_feature, get_humans_by_feature, draw_humans, create_mode
 from utils import parse_size
 from multiprocessing import Process, Event, set_start_method, Pipe, Queue
 import copy
+if chainer.backends.cuda.available:
+    import cupy as xp
+else:
+    import cupy as xp
+
 
 QUEUE_SIZE = 0
 
@@ -105,8 +111,15 @@ class Predictor(Process):
         if len(humans) > 0:
             for h in humans[0].values():
                 # cut image according to detected person
-                image_set.append(image[int(h[0]): int(h[2]), int(h[1]): int(h[3]), :])
-            #image_set.append(self.random_crop(im=image, exp= 20 - len(humans[0].keys())))
+                # is seems like dimension always have to be the same to convert to cupy
+                # TODO smart way to get same size instead of resizing
+                image_set.append(
+                    cv2.resize(
+                        image[int(h[0]): int(h[2]), int(h[1]): int(h[3]), :],
+                        (224, 224)
+                ))
+                # image_set=xp.array(image[int(h[0]): int(h[2]), int(h[1]): int(h[3]), :])
+            # image_set.append(self.random_crop(im=image, exp= 20 - len(humans[0].keys())))
         else:
             image_set = self.random_crop(im=image, exp=20)
 
@@ -163,6 +176,13 @@ class Predictor1(Predictor):
                     # cropped_image_set = self.cut_human(image, humans)
                     # logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
                     if self.queue.qsize() == 1: self.pipe_end.send(2)  # sign that big model passed first forward path
+
+                    ## BLOCK ON PORPUSE ##
+                    block = True
+                    while block:
+                        time.sleep(2)
+                        pass
+                    ######
                 else:
                     # logger.info("waiting for other model to load....")
                     if self.pipe_end.recv() == 'stop':
@@ -200,6 +220,12 @@ class Predictor1(Predictor):
                 # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
+            except:
+                print("Unexpected error:", sys.exc_info()[0])
+                self.pipe_end.send('stop')
+                time.sleep(1)
+                self.stop()
+                raise
 
 
 class Predictor2(Predictor):
@@ -247,8 +273,7 @@ class Predictor2(Predictor):
                         logger.info('humans queue empty')
                         cropped_image_set = self.random_crop(image, 20)
 
-                    # TODO use image_set instead of single image -> look at training process how batch is processed
-                    # easy hack just for loop trough set ...
+                    self.model.predict_video(cropped_image_set)
 
                     #logger.info('get img from queue took {} sec'.format(time.time()-t_start))
                     # print('pred2 getting from cap:'+str(count)+'\n')
@@ -304,6 +329,12 @@ class Predictor2(Predictor):
                 # logger.info("inference time average: {}s".format(inf_time / (self.queue.qsize() - 1)))
                 self.pipe_end.send('stop')
                 self.stop()
+            except:
+                print("Unexpected error:", sys.exc_info()[0])
+                self.pipe_end.send('stop')
+                time.sleep(1)
+                self.stop()
+                raise
 
 
 def load_config(args):
@@ -348,8 +379,8 @@ def high_speed(args):
 
     # cap = cv2.VideoCapture(0) # get input from usb camera
     # cap = cv2.VideoCapture('/home/mech-user/Documents/fabian/chainer-pose-proposal-net/work/video/test.mp4')
-    # cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
-    cap = cv2.VideoCapture("/home/mech-user/Documents/fabian/data/videos/test4.mp4")
+    cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
+    # cap = cv2.VideoCapture("/home/mech-user/Documents/fabian/data/videos/test4.mp4")
 
     if cap.isOpened() is False:
         print('Error opening video stream or file')
