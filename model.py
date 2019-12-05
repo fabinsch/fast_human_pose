@@ -6,7 +6,8 @@ from chainer import reporter
 import chainer.functions as F
 import chainer.links as L
 from chainer import initializers
-# import cupy
+if chainer.backends.cuda.available:
+    import cupy as xp
 
 import logging
 logger = logging.getLogger(__name__)
@@ -359,8 +360,12 @@ class PoseProposalNet(chainer.link.Chain):
     #### TODO right inference for image set
 
     def predict_video(self, image_set):
+        image_set = xp.asarray(image_set, dtype=xp.float32)
+
+        image_set = xp.moveaxis(image_set, 3, 1)
+        image_set = xp.ascontiguousarray(image_set, dtype=xp.float32)
         K = len(self.keypoint_names)
-        B, _, _, _ = image_set[0].shape
+        B, _, _, _ = image_set.shape
         outW, outH = self.outsize
 
         with chainer.using_config('train', False),\
@@ -379,5 +384,5 @@ class PoseProposalNet(chainer.link.Chain):
             self.local_grid_size[1], self.local_grid_size[0],
             outH, outW
         ))
-
+        print("done")
         return resp, conf, x, y, w, h, e
