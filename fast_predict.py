@@ -7,6 +7,7 @@ import time
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+import chainercv.transforms as transforms
 
 import chainer
 import cv2
@@ -63,7 +64,7 @@ class Capture(Process):
 
 class Predictor(Process):
 
-    def __init__(self, modelargs, config, queue_in, pipe_end, detection_threshold, min_num_keypoints): #, cap):
+    def __init__(self, modelargs, config, queue_in, queue_comm, pipe_end, detection_threshold, min_num_keypoints): #, cap):
         super(Predictor, self).__init__()
         # self.cap = cap
         self.modelargs = modelargs
@@ -71,8 +72,9 @@ class Predictor(Process):
         self.stop_event = Event()
         self.queue = Queue(QUEUE_SIZE)
         self.queue_in = queue_in
+        self.queue_comm = queue_comm
         self.pipe_end = pipe_end
-        print(queue_in)
+        # print(queue_in)
         self.model = None
         self.insize = None
         self.detection_threshold = detection_threshold
@@ -89,14 +91,37 @@ class Predictor(Process):
         return self.queue.get(timeout=100)
 
     def stop(self):
+        self.stop_event.set()
+        self.pipe_end.close()
         logger.info('{} will stop'.format(self.name))
         logger.info("{} processed {} images in {}".format(self.name, self.queue.qsize(), self.insize))
         logger.info("getting from queue average: {}s".format(self.queue_get_time / (self.queue.qsize())))
         logger.info("inference time average: {}s".format(self.inf_time / (self.queue.qsize() - 1)))  # substract one for the first image passed trough network
 
-        self.stop_event.set()
-        self.pipe_end.close()
+    def cut_human(self, image, humans):
+        # loop through humans to cut image
+        # always return 20 image crops
+        image_set = []
+        if len(humans) > 0:
+            for h in humans[0].values():
+                # cut image according to detected person
+                image_set.append(image[int(h[0]): int(h[2]), int(h[1]): int(h[3]), :])
+            #image_set.append(self.random_crop(im=image, exp= 20 - len(humans[0].keys())))
+        else:
+            image_set = self.random_crop(im=image, exp=20)
 
+        return image_set
+
+    def random_crop(self, im, exp):
+        image_set = []
+        for i in range(exp):
+            image, param = transforms.random_crop(
+                np.moveaxis(im, 2,0),
+                size=(224, 224),
+                return_param=True
+            )
+            image_set.append(np.moveaxis(image, 0, 2))
+        return image_set
 
 class Predictor1(Predictor):
     def run(self):
@@ -133,7 +158,9 @@ class Predictor1(Predictor):
                     # self.queue.put((image, feature_map), timeout=1)
                     self.queue.put((feature_map), timeout=1)
                     humans = get_humans_by_feature(model, feature_map, self.detection_threshold, self.min_num_keypoints)
-                    self.cut_human(image, humans)
+                    if len(humans) > 0:
+                        self.queue_comm.put(humans, timeout=1)
+                    # cropped_image_set = self.cut_human(image, humans)
                     # logger.debug("pred1 queue {}: ".format(self.queue.qsize()))
                     if self.queue.qsize() == 1: self.pipe_end.send(2)  # sign that big model passed first forward path
                 else:
@@ -175,15 +202,7 @@ class Predictor1(Predictor):
                 self.stop()
 
 
-    def cut_human(self, image, humans):
-        # loop through humans to cut image
-        if len(humans) > 0:
-            for h in humans[0].values():
-                print(h)
-
-
 class Predictor2(Predictor):
-
     def run(self):
         model = create_model(self.modelargs, self.config)
         logger.info('{} started at PID {} - 224x224 model loaded'.format(self.name, self.pid))
@@ -218,9 +237,23 @@ class Predictor2(Predictor):
                     # image, count = self.cap.get(2)
                     image, count = self.queue_in.get(timeout=1)
                     self.queue_get_time += time.time()-t_start
+
+
+                    try:
+                        humans = self.queue_comm.get(timeout=1)
+                        # if humans: print(humans)
+                        cropped_image_set = self.cut_human(image, humans)
+                    except queue.Empty:
+                        logger.info('humans queue empty')
+                        cropped_image_set = self.random_crop(image, 20)
+
+                    # TODO use image_set instead of single image -> look at training process how batch is processed
+                    # easy hack just for loop trough set ...
+
                     #logger.info('get img from queue took {} sec'.format(time.time()-t_start))
                     # print('pred2 getting from cap:'+str(count)+'\n')
                     image = cv2.resize(image, self.insize)
+                    # print(cropped_image_set)
                     t_start = time.time()
                     with chainer.using_config('autotune', True), \
                          chainer.using_config('use_ideep', 'auto'):
@@ -228,7 +261,7 @@ class Predictor2(Predictor):
                     if not self.queue.empty():
                         self.inf_time = time.time() - t_start
                     # self.queue.put((image, feature_map), timeout=1)
-                    self.queue.put((feature_map), timeout=1)
+                    self.queue.put((feature_map), timeout=1) # maybe not needed to be a queue, just internal storage of process
                     #logger.debug("pred2 queue: {}".format(self.queue.qsize()))
                     # while not self.pipe_end.recv() == 2:
                     #     print("waiting for first forward path of bigger model")
@@ -314,8 +347,10 @@ def high_speed(args):
         mask = None
 
     # cap = cv2.VideoCapture(0) # get input from usb camera
-    cap = cv2.VideoCapture('/home/mech-user/Documents/fabian/chainer-pose-proposal-net/work/video/test.mp4')
+    # cap = cv2.VideoCapture('/home/mech-user/Documents/fabian/chainer-pose-proposal-net/work/video/test.mp4')
     # cap = cv2.VideoCapture("/home/fabian/Documents/dataset/videos/test4.mp4")
+    cap = cv2.VideoCapture("/home/mech-user/Documents/fabian/data/videos/test4.mp4")
+
     if cap.isOpened() is False:
         print('Error opening video stream or file')
         exit(1)
@@ -328,6 +363,7 @@ def high_speed(args):
 
     # queue_main = queue.Queue(QUEUE_SIZE)
     queue_main = Queue(QUEUE_SIZE)
+    queue_comm = Queue(QUEUE_SIZE)
     counter = 0
 
     # first read in the whole video stream and later process by parallel running networks
@@ -350,6 +386,7 @@ def high_speed(args):
         modelargs=args.model1,
         config=config1,
         queue_in=queue_main,
+        queue_comm=queue_comm,
         pipe_end=reg_conn,
         detection_threshold=detection_thresh1,
         min_num_keypoints=min_num_keypoints1)
@@ -357,11 +394,10 @@ def high_speed(args):
         modelargs=args.model2,
         config=config2,
         queue_in=queue_main,
+        queue_comm=queue_comm,
         pipe_end=fast_conn,
         detection_threshold=detection_thresh2,
         min_num_keypoints=min_num_keypoints2)
-
-
 
     # start the processes
     # capture.start()
