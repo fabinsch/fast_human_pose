@@ -6,7 +6,8 @@ from chainer import reporter
 import chainer.functions as F
 import chainer.links as L
 from chainer import initializers
-import cupy
+if chainer.backends.cuda.available:
+    import cupy as xp
 
 import logging
 logger = logging.getLogger(__name__)
@@ -353,5 +354,42 @@ class PoseProposalNet(chainer.link.Chain):
             self.local_grid_size[1], self.local_grid_size[0],
             outH, outW
         ))
+
+        return resp, conf, x, y, w, h, e
+
+    #### TODO right inference for image set
+
+    def predict_video(self, image_set):
+        image_set = xp.asarray(image_set, dtype=xp.float32)
+
+        image_set = xp.moveaxis(image_set, 3, 1)
+        image_set = xp.ascontiguousarray(image_set, dtype=xp.float32)
+        K = len(self.keypoint_names)
+        B, _, _, _ = image_set.shape
+        outW, outH = self.outsize
+
+        with chainer.using_config('train', False),\
+                chainer.function.no_backprop_mode():
+            feature_map = self.forward(image_set)
+
+        resp = feature_map[:, 0 * K:1 * K, :, :]
+        conf = feature_map[:, 1 * K:2 * K, :, :]
+        x = feature_map[:, 2 * K:3 * K, :, :]
+        y = feature_map[:, 3 * K:4 * K, :, :]
+        w = feature_map[:, 4 * K:5 * K, :, :]
+        h = feature_map[:, 5 * K:6 * K, :, :]
+        e = feature_map[:, 6 * K:, :, :].reshape((
+            B,
+            len(self.edges),
+            self.local_grid_size[1], self.local_grid_size[0],
+            outH, outW
+        ))
+        resp = chainer.backends.cuda.to_cpu(resp.array)
+        conf = chainer.backends.cuda.to_cpu(conf.array)
+        w = chainer.backends.cuda.to_cpu(w.array)
+        h = chainer.backends.cuda.to_cpu(h.array)
+        x = chainer.backends.cuda.to_cpu(x.array)
+        y = chainer.backends.cuda.to_cpu(y.array)
+        e = chainer.backends.cuda.to_cpu(e.array)
 
         return resp, conf, x, y, w, h, e
