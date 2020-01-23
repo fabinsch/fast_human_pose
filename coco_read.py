@@ -27,12 +27,13 @@ coco_kps=COCO(annFile)
 # get all images containing given person instance (only them labeled with keypoints)
 catIds = coco.getCatIds(catNms=['person'])  # 1
 imgIds = coco.getImgIds(catIds=catIds )  # for train2017 len(imgIds) = 64,115 , val2017 len(imgIds) = 2693
+print('in total {} images to process'.format(len(imgIds)))
 # random select
 # img = coco.loadImgs(imgIds[np.random.randint(0,len(imgIds))])[0]
 
 s = 0  # TODO debug variable to break for loop
 for imgId in imgIds:
-    if s > 300:
+    if s > 10e100:
         break
     s = s + 1
     # load image
@@ -56,7 +57,7 @@ for imgId in imgIds:
             w = int(w)
             h = int(h)
 
-            # handle failure cases of slicing
+            # crops image according to person plus margin
             if x < 0:
                 x = 0
             if y < 0:
@@ -69,6 +70,33 @@ for imgId in imgIds:
                 h = img['height']
             else:
                 h = y + h
+
+            # crop square of size SSIZE NOT WORKING
+            # cx = x + w/2
+            # cy = y + h/2
+            # x = cx - SSIZE/2
+            # y = cy - SSIZE/2
+            #
+            # x = int(x)
+            # y = int(y)
+            # w = int(w)
+            # h = int(h)
+            #
+            # if x < 0:
+            #     x = 0
+            # if y < 0:
+            #     y = 0
+            #
+            # if x + SSIZE > img['width']:
+            #     w = (x+SSIZE) + int((img['width']) - (x+SSIZE))
+            # else:
+            #     w = SSIZE
+            # if y + SSIZE > img['height']:
+            #     h = (y+SSIZE) + int((img['height']) - (y+SSIZE))
+            # else:
+            #     h = SSIZE
+
+
 
             crop_img2 = I2[y:h, x:w]
             # cv2.imshow("cropped", crop_img2)
