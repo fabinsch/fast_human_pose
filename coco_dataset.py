@@ -128,6 +128,7 @@ def get_coco_dataset(insize, image_root, annotations,
     assert cat['keypoints'] == DEFAULT_KEYPOINT_NAMES
     # image_id => filename, keypoints, bbox, is_visible, is_labeled
     images = {}
+    annotations_dict = {}
 
     for image in dataset['images']:
         images[image['id']] = image['file_name'], [], [], [], [], []
@@ -141,6 +142,8 @@ def get_coco_dataset(insize, image_root, annotations,
         #    continue
         if anno['bbox'][3] < 150:
             continue
+
+        annotations_dict[anno['id']] = anno['image_id'], [], [], [], [], []
 
         x_offset, y_offset = xy_offset.get(str(anno['id']), (0, 0))
         image_id = anno['image_id']
@@ -169,13 +172,15 @@ def get_coco_dataset(insize, image_root, annotations,
         is_visible = d[:, 2] == 2
         is_labeled = d[:, 2] >= 1
 
-        entry = images[image_id]
+        # entry = images[image_id]
+        entry = annotations_dict[anno['id']]
         entry[1].append(np.asarray(keypoints_corr))
         entry[2].append(np.asarray(bbox))
         entry[3].append(np.asarray(is_visible).astype(np.bool))
         entry[4].append(np.asarray(is_labeled).astype(np.bool))
         # fifth entry is modified file name
-        file_name = entry[0].split('.')
+        # file_name = entry[0].split('.')
+        file_name = images[image_id][0].split('.')
         entry[5].append('{}_annid{}.{}'.format(file_name[0], anno['id'], file_name[1]))  # modify to get annotation ID
 
     # filter-out non annotated images
@@ -185,7 +190,8 @@ def get_coco_dataset(insize, image_root, annotations,
     is_visible = []
     is_labeled = []
 
-    for filename, k, b, v, l, new_filename in images.values():
+    #for filename, k, b, v, l, new_filename in images.values():
+    for annotationID, k, b, v, l, new_filename in annotations_dict.values():
         if len(k) == 0:
             continue
         # image_paths.append(filename)
