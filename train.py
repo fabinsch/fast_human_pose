@@ -39,8 +39,9 @@ def set_random_seed(devices, seed):
         if id < 0:
             break
         if key == 'main':
-            chainer.cuda.get_device_from_id(id).use()
-            chainer.cuda.cupy.random.seed(seed)
+            if chainer.backend.cuda.available:  # modified
+                chainer.cuda.get_device_from_id(id).use()
+                chainer.cuda.cupy.random.seed(seed)
 
 
 def create_model(config, dataset):
@@ -153,7 +154,8 @@ def main():
     optimizer.add_hook(chainer.optimizer.WeightDecay(0.0005))
 
     logger.info('> setup trainer')
-    updater = training.updaters.ParallelUpdater(train_iter, optimizer, devices=devices)
+    # updater = training.updaters.ParallelUpdater(train_iter, optimizer, devices=devices)  # GPU
+    updater = training.updaters.StandardUpdater(train_iter, optimizer)  # CPU
     trainer = training.Trainer(updater,
                                (config.getint('training_param', 'train_iter'), 'iteration'),
                                config.get('result', 'dir')
