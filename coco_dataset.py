@@ -117,23 +117,23 @@ for keypoints in TRACK_ORDERS:
 
 def get_coco_dataset(insize, image_root, annotations,
                      min_num_keypoints=1, use_cache=False, do_augmentation=False):
-    cat_id = 1
+    cat_id = 1  # just persons
     dataset_type = 'coco'
     dataset = json.load(open(annotations, 'r'))
-    cat = dataset['categories'][cat_id - 1]
+    cat = dataset['categories'][cat_id - 1]  # get just persons
     assert cat['keypoints'] == DEFAULT_KEYPOINT_NAMES
     # image_id => filename, keypoints, bbox, is_visible, is_labeled
     images = {}
 
     for image in dataset['images']:
-        images[image['id']] = image['file_name'], [], [], [], []
+        images[image['id']] = image['file_name'], [], [], [], [], []
 
     for anno in dataset['annotations']:
         if anno['num_keypoints'] < min_num_keypoints:
             continue
         if anno['category_id'] != cat_id:
             continue
-        if anno['iscrowd'] != 0:
+        if anno['iscrowd'] != 0:  # iscrowd 0 means single object
             continue
         image_id = anno['image_id']
         d = np.array(anno['keypoints'], dtype='float32').reshape(-1, 3)
@@ -161,6 +161,9 @@ def get_coco_dataset(insize, image_root, annotations,
         entry[2].append(np.asarray(bbox))
         entry[3].append(np.asarray(is_visible).astype(np.bool))
         entry[4].append(np.asarray(is_labeled).astype(np.bool))
+        # fifth entry is modified file name
+        file_name = entry[0].split('.')
+        entry[5].append('{}_annid{}.{}'.format(file_name[0], anno['id'], file_name[1]))  # modify to get annotation ID
 
     # filter-out non annotated images
     image_paths = []
@@ -169,10 +172,11 @@ def get_coco_dataset(insize, image_root, annotations,
     is_visible = []
     is_labeled = []
 
-    for filename, k, b, v, l in images.values():
+    for filename, k, b, v, l, new_filename in images.values():
         if len(k) == 0:
             continue
-        image_paths.append(filename)
+        # image_paths.append(filename)
+        image_paths.append(new_filename[0])
         bbox.append(b)
         keypoints.append(k)
         is_visible.append(v)
