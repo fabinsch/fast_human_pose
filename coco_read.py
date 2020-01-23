@@ -1,6 +1,7 @@
 import random
 from pycocotools.coco import COCO
 import cv2
+import json
 import numpy as np
 import skimage.io as io
 import matplotlib.pyplot as plt
@@ -15,6 +16,7 @@ pylab.rcParams['figure.figsize'] = (8.0, 10.0)
 # specify dataset path
 dataDir='/Users/fabianschramm/Documents/coco'
 dataType='train2017'
+# dataType='val2017'
 annFile='{}/annotations/instances_{}.json'.format(dataDir,dataType)
 
 # initialize COCO api for instance annotations
@@ -32,6 +34,7 @@ print('in total {} images to process'.format(len(imgIds)))
 # img = coco.loadImgs(imgIds[np.random.randint(0,len(imgIds))])[0]
 
 s = 0  # TODO debug variable to break for loop
+xy_crop = {}
 for imgId in imgIds:
     if s > 10e100:
         break
@@ -45,7 +48,7 @@ for imgId in imgIds:
     annIds = coco_kps.getAnnIds(imgIds=img['id'], catIds=catIds, iscrowd=None)
     anns = coco_kps.loadAnns(annIds)
     for ann in anns:
-        if ann['num_keypoints'] > MIN_KEYPOINTS and ann['bbox'][3] > MIN_HEIGHT:
+        if ann['num_keypoints'] > MIN_KEYPOINTS and ann['bbox'][3] > MIN_HEIGHT:  # get just well annotated and not to small persons
             x, y, w, h = ann['bbox']
             x = x - (w*0.2)
             y = y - (h*0.2)
@@ -104,7 +107,14 @@ for imgId in imgIds:
             im_path = '{}/images_cropped/{}/{}_annid{}.jpg'.format(dataDir, dataType, img_name, ann['id'])
             cv2.imwrite(im_path, crop_img2)
 
+            # safe x and y offset from image crop to later adjust keypoint locations
+            xy_crop[ann['id']] = (x, y)
+
     print('{} done so far'.format(s))
+
+# dict to access how image was cropped in order to adjust keypoints and bbox
+with open('{}/images_cropped/{}/xy_offset'.format(dataDir, dataType), 'w') as fp:
+    json.dump(xy_crop, fp)
 
     # save picture with annotations
     # plt.imshow(I); plt.axis('off')
