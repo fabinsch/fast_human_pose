@@ -2,6 +2,7 @@ import numpy as np
 import json
 from logging import getLogger
 logger = getLogger('__main__')
+import os
 
 from dataset import KeypointDataset2D
 from utils import pairwise
@@ -120,6 +121,9 @@ def get_coco_dataset(insize, image_root, annotations,
     cat_id = 1  # just persons
     dataset_type = 'coco'
     dataset = json.load(open(annotations, 'r'))
+
+    xy_offset = json.load(open(os.path.join(image_root, 'xy_offset')))
+
     cat = dataset['categories'][cat_id - 1]  # get just persons
     assert cat['keypoints'] == DEFAULT_KEYPOINT_NAMES
     # image_id => filename, keypoints, bbox, is_visible, is_labeled
@@ -133,8 +137,12 @@ def get_coco_dataset(insize, image_root, annotations,
             continue
         if anno['category_id'] != cat_id:
             continue
-        if anno['iscrowd'] != 0:  # iscrowd 0 means single object
+        #if anno['iscrowd'] != 0:  # iscrowd 0 means single object
+        #    continue
+        if anno['bbox'][3] < 150:
             continue
+
+        x_offset, y_offset = xy_offset.get(str(anno['id']), (0, 0))
         image_id = anno['image_id']
         d = np.array(anno['keypoints'], dtype='float32').reshape(-1, 3)
         # define neck from left_shoulder and right_shoulder
@@ -152,12 +160,17 @@ def get_coco_dataset(insize, image_root, annotations,
             d = np.vstack([np.array([0.0, 0.0, labeled]), d])
 
         keypoints = d[:, [1, 0]]  # array of y,x
+        corr_scalar = np.array([y_offset, x_offset])
+        corr_array = np.multiply(np.ones_like(keypoints), corr_scalar)
+        keypoints_corr = keypoints - corr_array
         bbox = anno['bbox']
+        bbox[0] -= x_offset
+        bbox[1] -= y_offset
         is_visible = d[:, 2] == 2
         is_labeled = d[:, 2] >= 1
 
         entry = images[image_id]
-        entry[1].append(np.asarray(keypoints))
+        entry[1].append(np.asarray(keypoints_corr))
         entry[2].append(np.asarray(bbox))
         entry[3].append(np.asarray(is_visible).astype(np.bool))
         entry[4].append(np.asarray(is_labeled).astype(np.bool))
