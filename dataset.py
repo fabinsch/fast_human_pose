@@ -61,8 +61,8 @@ class KeypointDataset2D(DatasetMixin):
         transform_param['random_flip'] = param
 
         # Random crop
-        image, keypoints, bbox, param = random_crop(image, keypoints, bbox, is_labeled, dataset_type)
-        transform_param['random_crop'] = param
+        # image, keypoints, bbox, param = random_crop(image, keypoints, bbox, is_labeled, dataset_type)
+        # transform_param['random_crop'] = param
 
         return image, keypoints, bbox, is_labeled, is_visible, transform_param
 
