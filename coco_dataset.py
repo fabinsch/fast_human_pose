@@ -140,7 +140,7 @@ def get_coco_dataset(insize, image_root, annotations,
             continue
         #if anno['iscrowd'] != 0:  # iscrowd 0 means single object
         #    continue
-        if anno['bbox'][3] < 150:
+        if anno['bbox'][3] <= 150:
             continue
 
         annotations_dict[anno['id']] = anno['image_id'], [], [], [], [], []
@@ -190,7 +190,8 @@ def get_coco_dataset(insize, image_root, annotations,
     is_visible = []
     is_labeled = []
 
-    #for filename, k, b, v, l, new_filename in images.values():
+
+    # for filename, k, b, v, l, new_filename in images.values():
     for annotationID, k, b, v, l, new_filename in annotations_dict.values():
         if len(k) == 0:
             continue
