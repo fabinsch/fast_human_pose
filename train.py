@@ -154,8 +154,11 @@ def main():
     optimizer.add_hook(chainer.optimizer.WeightDecay(0.0005))
 
     logger.info('> setup trainer')
-    # updater = training.updaters.ParallelUpdater(train_iter, optimizer, devices=devices)  # GPU
-    updater = training.updaters.StandardUpdater(train_iter, optimizer)  # CPU
+
+    if chainer.backend.cuda.available:
+        updater = training.updaters.ParallelUpdater(train_iter, optimizer, devices=devices)  # GPU
+    else:
+        updater = training.updaters.StandardUpdater(train_iter, optimizer)  # CPU
     trainer = training.Trainer(updater,
                                (config.getint('training_param', 'train_iter'), 'iteration'),
                                config.get('result', 'dir')
